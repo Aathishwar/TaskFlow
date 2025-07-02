@@ -59,7 +59,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             id: backendUser.id,
             email: backendUser.email,
             displayName: backendUser.displayName,
-            profilePicture: backendUser.profilePicture
+            profilePicture: backendUser.profilePicture,
+            bio: backendUser.bio,
+            phone: backendUser.phone,
+            location: backendUser.location,
+            googleId: backendUser.googleId
           };
           
           setUser(syncedUser);
@@ -258,7 +262,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               id: firebaseUser.uid,
               email: firebaseUser.email || '',
               displayName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || '',
-              profilePicture: firebaseUser.photoURL || ''
+              profilePicture: firebaseUser.photoURL || '',
+              bio: '',
+              phone: '',
+              location: '',
+              googleId: undefined
             };
             setUser(basicUser);
             setIsUserSynced(false);

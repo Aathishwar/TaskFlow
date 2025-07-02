@@ -49,9 +49,16 @@ const TaskCard: React.FC<TaskCardProps> = ({
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [pendingUpdates, setPendingUpdates] = useState<Task | null>(null);
 
-  // Check ownership
-  const isOwner = task.owner && task.owner.id === currentUserId;
+  // Use pending updates if available, otherwise use current task
+  const currentTask = pendingUpdates || task;
+  
+  // Check ownership - ALWAYS use the original task for ownership check
+  const isOwner = task.owner?.id === currentUserId;
+  
+  // Simple check: show shared info if there are shared users
+  const hasSharedUsers = currentTask.sharedWith && currentTask.sharedWith.length > 0;
 
   // Use the animated deletion hook
   const deletionState = useAnimatedDeletion(
@@ -102,14 +109,19 @@ const TaskCard: React.FC<TaskCardProps> = ({
 
   const handleModalClose = () => {
     setIsModalOpen(false);
+    // Apply any pending updates when modal is closed
+    if (pendingUpdates) {
+      onTaskUpdate(pendingUpdates);
+      setPendingUpdates(null);
+    }
   };
 
   const handleRemoveSharedUser = async (userId: string) => {
     try {
       // Call the service function to remove the user
       const updatedTask = await taskService.removeUserFromTask(task._id, userId);
-      // Update the task in the parent component's state
-      onTaskUpdate(updatedTask);
+      // Store the update instead of applying immediately
+      setPendingUpdates(updatedTask);
     } catch (error) {
       console.error('Error removing user from task:', error);
       // Handle error (e.g., show a toast notification)
@@ -125,7 +137,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
       _hover={{ 
         boxShadow: deletionState.isDeleting ? 'sm' : 'lg', 
         transform: deletionState.isDeleting ? 'none' : 'translateY(-2px)',
-        borderColor: deletionState.isDeleting ? borderColor : (task.status === 'completed' ? 'green.300' : 'blue.200')
+        borderColor: deletionState.isDeleting ? borderColor : (currentTask.status === 'completed' ? 'green.300' : 'blue.200')
       }}
       transition={deletionState.isDeleting ? 'none' : 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'}
       position="relative"
@@ -299,24 +311,24 @@ const TaskCard: React.FC<TaskCardProps> = ({
               {/* Circular Tick Box */}
               <Circle
                 size="28px"
-                bg={task.status === 'completed' ? 'green.500' : 'white'}
+                bg={currentTask.status === 'completed' ? 'green.500' : 'white'}
                 color="white"
                 cursor="pointer"
-                onClick={() => onStatusChange(task._id, task.status === 'completed' ? 'pending' : 'completed')}
+                onClick={() => onStatusChange(currentTask._id, currentTask.status === 'completed' ? 'pending' : 'completed')}
                 _hover={{
                   transform: 'scale(1.1)',
-                  bg: task.status === 'completed' ? 'green.600' : 'green.100',
-                  borderColor: task.status === 'completed' ? 'green.600' : 'green.400'
+                  bg: currentTask.status === 'completed' ? 'green.600' : 'green.100',
+                  borderColor: currentTask.status === 'completed' ? 'green.600' : 'green.400'
                 }}
                 transition="all 0.3s cubic-bezier(0.4, 0, 0.2, 1)"
                 border="3px solid"
-                borderColor={task.status === 'completed' ? 'green.500' : 'gray.300'}
-                boxShadow={task.status === 'completed' ? 'md' : 'sm'}
+                borderColor={currentTask.status === 'completed' ? 'green.500' : 'gray.300'}
+                boxShadow={currentTask.status === 'completed' ? 'md' : 'sm'}
                 _active={{
                   transform: 'scale(0.95)'
                 }}
               >
-                {task.status === 'completed' && (
+                {currentTask.status === 'completed' && (
                   <CheckIcon 
                     boxSize="14px" 
                     animation="checkmark-appear 0.3s ease-out"
@@ -334,15 +346,15 @@ const TaskCard: React.FC<TaskCardProps> = ({
               <Text
                 fontSize="lg"
                 fontWeight="semibold"
-                textDecoration={task.status === 'completed' ? 'line-through' : 'none'}
+                textDecoration={currentTask.status === 'completed' ? 'line-through' : 'none'}
                 color={useColorModeValue('gray.800', 'white')}
                 transition="all 0.2s"
               >
-                {task.title}
+                {currentTask.title}
               </Text>
               {/* Status and Priority Badges beside title */}
               <Badge
-                colorScheme={getStatusColor(task.status)}
+                colorScheme={getStatusColor(currentTask.status)}
                 variant="subtle"
                 borderRadius="full"
                 px={3}
@@ -352,10 +364,10 @@ const TaskCard: React.FC<TaskCardProps> = ({
                 transition="all 0.2s"
                 _hover={{ transform: 'scale(1.05)' }}
               >
-                {task.status?.replace('-', ' ') ?? ''}
+                {currentTask.status?.replace('-', ' ') ?? ''}
               </Badge>
               <Badge
-                colorScheme={getPriorityColor(task.priority)}
+                colorScheme={getPriorityColor(currentTask.priority)}
                 variant="outline"
                 size="sm"
                 borderRadius="full"
@@ -366,7 +378,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
                 transition="all 0.2s"
                 _hover={{ transform: 'scale(1.05)' }}
               >
-                {task.priority} priority
+                {currentTask.priority} priority
               </Badge>
             </HStack>
 
@@ -374,20 +386,20 @@ const TaskCard: React.FC<TaskCardProps> = ({
             <HStack spacing={2}>
               <CalendarIcon boxSize="14px" color={useColorModeValue('gray.400', 'gray.500')} />
               <Text fontSize="xs" color={useColorModeValue('gray.500', 'gray.400')}>
-                Created: {format(new Date(task.createdAt), 'MMM dd, yyyy, HH:mm')}
+                Created: {format(new Date(currentTask.createdAt), 'MMM dd, yyyy, HH:mm')}
               </Text>
             </HStack>
 
             {/* Description */}
-            {task.description && (
+            {currentTask.description && (
               <Text color={useColorModeValue('gray.600', 'gray.300')} fontSize="sm">
-                {task.description}
+                {currentTask.description}
               </Text>
             )}
             {/* Tags as pills */}
-            {task.tags && task.tags.length > 0 && (
+            {currentTask.tags && currentTask.tags.length > 0 && (
               <HStack spacing={2} wrap="wrap" mt={1}>
-                {task.tags.map((tag) => (
+                {currentTask.tags.map((tag) => (
                   <Badge
                     key={tag}
                     colorScheme="purple"
@@ -407,7 +419,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
             )}
 
             {/* Due Date (at the bottom, above share details) */}
-            {task.dueDate && (
+            {currentTask.dueDate && (
               <HStack spacing={2} mt={2}>
                 <TimeIcon boxSize="14px" color={useColorModeValue('gray.400', 'gray.500')} />
                 <Text fontSize="sm" color={useColorModeValue('gray.500', 'gray.400')}>
@@ -416,17 +428,17 @@ const TaskCard: React.FC<TaskCardProps> = ({
                 <Text
                   fontSize="sm"
                   color={
-                    isOverdue(task.dueDate)
+                    isOverdue(currentTask.dueDate)
                       ? 'red.500'
-                      : isDueSoon(task.dueDate)
+                      : isDueSoon(currentTask.dueDate)
                       ? 'orange.500'
                       : useColorModeValue('gray.600', 'gray.300')
                   }
-                  fontWeight={isOverdue(task.dueDate) || isDueSoon(task.dueDate) ? 'medium' : 'normal'}
+                  fontWeight={isOverdue(currentTask.dueDate) || isDueSoon(currentTask.dueDate) ? 'medium' : 'normal'}
                 >
-                  {format(new Date(task.dueDate), 'MMM dd, yyyy, HH:mm')}
+                  {format(new Date(currentTask.dueDate), 'MMM dd, yyyy, HH:mm')}
                 </Text>
-                {isOverdue(task.dueDate) && (
+                {isOverdue(currentTask.dueDate) && (
                   <Badge
                     colorScheme="red"
                     size="sm"
@@ -446,7 +458,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
                     Overdue
                   </Badge>
                 )}
-                {isDueSoon(task.dueDate) && !isOverdue(task.dueDate) && (
+                {isDueSoon(currentTask.dueDate) && !isOverdue(currentTask.dueDate) && (
                   <Badge
                     colorScheme="orange"
                     size="sm"
@@ -470,15 +482,15 @@ const TaskCard: React.FC<TaskCardProps> = ({
             )}
 
             {/* Shared Users (at the very bottom) */}
-            {task.sharedWith && task.sharedWith.length > 0 && (
+            {hasSharedUsers && (
               <HStack spacing={2} mt={2} align="center">
                 <Text fontSize="sm" color={useColorModeValue('gray.500', 'gray.400')}>
                   {isOwner ? 'Shared with:' : 'Shared with you by:'}
                 </Text>
                 {isOwner ? (
-                  // You are the owner: show only the SharedAvatar component
+                  // You are the owner: show shared users
                   <SharedAvatar
-                    users={task.sharedWith.map((user) => ({
+                    users={currentTask.sharedWith!.map((user) => ({
                       id: user.id,
                       name: user.displayName,
                       avatarUrl: user.profilePicture || '',
@@ -486,16 +498,16 @@ const TaskCard: React.FC<TaskCardProps> = ({
                     onAvatarClick={handleAvatarClick}
                   />
                 ) : (
-                  // You are a recipient: show owner's avatar and name directly
+                  // You are a recipient: show owner's avatar and name
                   <HStack spacing={1} align="center">
                     <Avatar
-                      name={task.owner?.displayName || 'Owner'}
-                      src={task.owner?.profilePicture}
-                      title={task.owner?.displayName || 'Owner'}
+                      name={currentTask.owner?.displayName || 'Owner'}
+                      src={currentTask.owner?.profilePicture}
+                      title={currentTask.owner?.displayName || 'Owner'}
                       size="xs"
                     />
                     <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.300')} noOfLines={1} maxW="60px">
-                      {task.owner?.displayName || 'Owner'}
+                      {currentTask.owner?.displayName || 'Owner'}
                     </Text>
                   </HStack>
                 )}
@@ -513,14 +525,18 @@ const TaskCard: React.FC<TaskCardProps> = ({
                 size="sm"
                 variant="outline"
                 borderRadius="lg"
+                bg={useColorModeValue('transparent', 'gray.700')}
+                borderColor={useColorModeValue('gray.200', 'gray.600')}
+                color={useColorModeValue('gray.700', 'white')}
                 _hover={{
-                  bg: 'blue.50',
-                  borderColor: 'blue.300',
+                  bg: useColorModeValue('blue.50', 'blue.600'),
+                  borderColor: useColorModeValue('blue.300', 'blue.500'),
+                  color: useColorModeValue('blue.600', 'white'),
                   transform: 'scale(1.02)'
                 }}
                 transition="all 0.2s"
               >
-                {task.status.replace('-', ' ')}
+                {currentTask.status.replace('-', ' ')}
               </MenuButton>
               <Portal>
                 <MenuList 
@@ -528,28 +544,47 @@ const TaskCard: React.FC<TaskCardProps> = ({
                   borderRadius="lg"
                   boxShadow="xl"
                   border="1px solid"
-                  borderColor="gray.200"
+                  borderColor={useColorModeValue('gray.200', 'gray.600')}
+                  bg={useColorModeValue('white', 'gray.800')}
                 >
                   <MenuItem 
-                    onClick={() => onStatusChange(task._id, 'pending')}
+                    onClick={() => onStatusChange(currentTask._id, 'pending')}
                     borderRadius="md"
-                    _hover={{ bg: 'yellow.50', transform: 'scale(1.02)' }}
+                    bg={useColorModeValue('transparent', 'gray.700')}
+                    color={useColorModeValue('gray.700', 'white')}
+                    _hover={{ 
+                      bg: useColorModeValue('yellow.50', 'yellow.600'), 
+                      color: useColorModeValue('yellow.700', 'white'),
+                      transform: 'scale(1.02)' 
+                    }}
                     transition="all 0.2s"
                   >
                     Pending
                   </MenuItem>
                   <MenuItem 
-                    onClick={() => onStatusChange(task._id, 'in-progress')}
+                    onClick={() => onStatusChange(currentTask._id, 'in-progress')}
                     borderRadius="md"
-                    _hover={{ bg: 'blue.50', transform: 'scale(1.02)' }}
+                    bg={useColorModeValue('transparent', 'gray.700')}
+                    color={useColorModeValue('gray.700', 'white')}
+                    _hover={{ 
+                      bg: useColorModeValue('blue.50', 'blue.600'), 
+                      color: useColorModeValue('blue.700', 'white'),
+                      transform: 'scale(1.02)' 
+                    }}
                     transition="all 0.2s"
                   >
                     In Progress
                   </MenuItem>
                   <MenuItem 
-                    onClick={() => onStatusChange(task._id, 'completed')}
+                    onClick={() => onStatusChange(currentTask._id, 'completed')}
                     borderRadius="md"
-                    _hover={{ bg: 'green.50', transform: 'scale(1.02)' }}
+                    bg={useColorModeValue('transparent', 'gray.700')}
+                    color={useColorModeValue('gray.700', 'white')}
+                    _hover={{ 
+                      bg: useColorModeValue('green.50', 'green.600'), 
+                      color: useColorModeValue('green.700', 'white'),
+                      transform: 'scale(1.02)' 
+                    }}
                     transition="all 0.2s"
                   >
                     Completed
@@ -565,7 +600,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
                 icon={<EditIcon />}
                 size="sm"
                 variant="ghost"
-                onClick={() => onEdit(task)}
+                onClick={() => onEdit(currentTask)}
                 borderRadius="lg"
                 _hover={{ 
                   bg: 'blue.50', 
@@ -579,7 +614,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
                 icon={<ExternalLinkIcon />}
                 size="sm"
                 variant="ghost"
-                onClick={() => onShare(task)}
+                onClick={() => onShare(currentTask)}
                 borderRadius="lg"
                 _hover={{ 
                   bg: 'green.50', 
@@ -612,12 +647,12 @@ const TaskCard: React.FC<TaskCardProps> = ({
         </Flex>
       </CardBody>
 
-      {/* Shared Users Modal - Only render if current user is the owner */}
-      {isOwner && (
+      {/* Shared Users Modal - Only render if current user is the owner and has shared users */}
+      {isOwner && hasSharedUsers && (
         <SharedUsersModal
           isOpen={isModalOpen}
           onClose={handleModalClose}
-          users={task.sharedWith.map((user) => ({
+          users={currentTask.sharedWith!.map((user) => ({
             id: user.id,
             name: user.displayName,
             avatarUrl: user.profilePicture || '',

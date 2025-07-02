@@ -28,6 +28,7 @@ import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import { taskService } from '../services/taskService';
 import { Task, TaskFilters as TaskFiltersType, CreateTaskData, UpdateTaskData } from '../types';
+import { useTaskNotifications } from '../hooks/useTaskNotifications';
 
 // Tab configuration with colors matching the design
 const tabConfig = [
@@ -94,6 +95,9 @@ const DashboardPage: React.FC = () => {
   const [filteredTasks, setFilteredTasks] = useState<Task[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [unsharedTaskIdsPendingUpdate, setUnsharedTaskIdsPendingUpdate] = useState<string[]>([]); // New state for pending updates
+  const [notificationsEnabled] = useState<boolean>(
+    localStorage.getItem('taskflow-notifications-enabled') === 'true' || false
+  ); // Notification state
 
   // Ref to track initial load status per user
   const initialLoadDoneRef = useRef<{ [userId: string]: boolean }>({});
@@ -106,6 +110,16 @@ const DashboardPage: React.FC = () => {
   const { socket, isConnected } = useSocket();
   const { user } = useAuth();
   const toast = useToast();
+
+  // Combine all tasks for notifications (both owned and shared)
+  const allTasks = [...tasks, ...sharedTasks];
+
+  // Initialize task notifications
+  useTaskNotifications({
+    tasks: allTasks,
+    isEnabled: notificationsEnabled,
+    checkInterval: 5 * 60 * 1000 // Check every 5 minutes
+  });
 
   // Color mode values
   const bgColor = useColorModeValue('gray.50', 'gray.900');

@@ -4,8 +4,39 @@ import { generateJWT } from '../middleware/auth.middleware';
 import { IUser } from '../models/user.model';
 import { adminAuth } from '../config/firebase-admin';
 import User from '../models/user.model';
+import Task from '../models/task.model';
 import crypto from 'crypto';
 import authDeduplicationMiddleware, { completeAuthRequest } from '../middleware/auth-deduplication.middleware';
+import multer from 'multer';
+import path from 'path';
+import { v2 as cloudinary } from 'cloudinary';
+
+// Configure Cloudinary (you'll need to add your credentials to environment variables)
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+// Configure multer for file uploads
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|gif|webp/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+
+    if (extname && mimetype) {
+      return cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only images are allowed.'));
+    }
+  },
+});
 
 const router = Router();
 
@@ -57,7 +88,11 @@ router.get('/me',
           id: user._id,
           email: user.email,
           displayName: user.displayName,
-          profilePicture: user.profilePicture
+          profilePicture: user.profilePicture,
+          bio: user.bio,
+          phone: user.phone,
+          location: user.location,
+          googleId: user.googleId
         }
       });
     } catch (error) {
@@ -146,13 +181,17 @@ router.post('/firebase', authDeduplicationMiddleware, async (req: Request, res: 
     if (!user) {
       console.log('👤 Creating new user...');
       // Create new user with proper error handling
-      const newUserData = {
+      const newUserData: any = {
         email,
         displayName: name || email.split('@')[0],
         profilePicture: picture || '',
-        firebaseUid: uid,
-        ...(googleId && { googleId }) // Only add googleId if it exists
+        firebaseUid: uid
       };
+      
+      // Only add googleId if it exists (for Google auth users)
+      if (googleId) {
+        newUserData.googleId = googleId;
+      }
       
       user = new User(newUserData);
       
@@ -306,7 +345,11 @@ router.post('/firebase', authDeduplicationMiddleware, async (req: Request, res: 
         id: user._id,
         email: user.email,
         displayName: user.displayName,
-        profilePicture: user.profilePicture
+        profilePicture: user.profilePicture,
+        bio: user.bio,
+        phone: user.phone,
+        location: user.location,
+        googleId: user.googleId
       },
       token
     };
@@ -329,5 +372,221 @@ router.post('/firebase', authDeduplicationMiddleware, async (req: Request, res: 
     res.status(401).json(errorResponse);
   }
 });
+
+// @route   PUT /api/auth/profile
+// @desc    Update user profile
+// @access  Private
+router.put('/profile',
+  passport.authenticate('jwt', { session: false }),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const user = req.user as IUser;
+      const { displayName, bio, phone, location } = req.body;
+
+      if (!displayName || !displayName.trim()) {
+        res.status(400).json({
+          success: false,
+          message: 'Display name is required'
+        });
+        return;
+      }
+
+      // Prepare update data - simple direct update
+      const updateData: any = {
+        displayName: displayName.trim()
+      };
+      
+      if (bio !== undefined) updateData.bio = bio.trim();
+      if (phone !== undefined) updateData.phone = phone.trim();
+      if (location !== undefined) updateData.location = location.trim();
+
+      // Update user in database directly
+      const updatedUser = await User.findByIdAndUpdate(
+        user._id,
+        updateData,
+        { new: true }
+      );
+
+      if (!updatedUser) {
+        res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+        return;
+      }
+
+      res.json({
+        success: true,
+        message: 'Profile updated successfully',
+        user: {
+          id: updatedUser._id,
+          email: updatedUser.email,
+          displayName: updatedUser.displayName,
+          profilePicture: updatedUser.profilePicture,
+          bio: updatedUser.bio,
+          phone: updatedUser.phone,
+          location: updatedUser.location,
+          googleId: updatedUser.googleId
+        }
+      });
+    } catch (error) {
+      console.error('Update profile error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error'
+      });
+    }
+  }
+);
+
+// @route   PUT /api/auth/profile/picture
+// @desc    Update user profile picture
+// @access  Private
+router.put('/profile/picture',
+  passport.authenticate('jwt', { session: false }),
+  upload.single('profilePicture'),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const user = req.user as IUser;
+      const file = req.file;
+
+      if (!file) {
+        res.status(400).json({
+          success: false,
+          message: 'No file uploaded'
+        });
+        return;
+      }
+
+      // Upload to Cloudinary (or you can use local storage)
+      let profilePictureUrl = '';
+      
+      if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
+        // Use Cloudinary if configured
+        const uploadResult = await new Promise((resolve, reject) => {
+          cloudinary.uploader.upload_stream(
+            {
+              resource_type: 'image',
+              folder: 'taskflow/profiles',
+              public_id: `user_${user._id}`,
+              overwrite: true,
+              transformation: [
+                { width: 300, height: 300, crop: 'fill', gravity: 'face' },
+                { quality: 'auto', fetch_format: 'auto' }
+              ]
+            },
+            (error, result) => {
+              if (error) reject(error);
+              else resolve(result);
+            }
+          ).end(file.buffer);
+        });
+
+        const cloudinaryResult = uploadResult as any;
+        profilePictureUrl = cloudinaryResult.secure_url;
+      } else {
+        // Fallback: use a placeholder or base64 encoding for demo purposes
+        // In production, you should implement proper file storage
+        const base64 = file.buffer.toString('base64');
+        profilePictureUrl = `data:${file.mimetype};base64,${base64}`;
+      }
+      
+      // Update user in database
+      const updatedUser = await User.findByIdAndUpdate(
+        user._id,
+        { profilePicture: profilePictureUrl },
+        { new: true }
+      );
+
+      if (!updatedUser) {
+        res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+        return;
+      }
+
+      res.json({
+        success: true,
+        message: 'Profile picture updated successfully',
+        user: {
+          id: updatedUser._id,
+          email: updatedUser.email,
+          displayName: updatedUser.displayName,
+          profilePicture: updatedUser.profilePicture,
+          bio: updatedUser.bio,
+          phone: updatedUser.phone,
+          location: updatedUser.location,
+          googleId: updatedUser.googleId
+        }
+      });
+    } catch (error) {
+      console.error('Update profile picture error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to update profile picture'
+      });
+    }
+  }
+);
+
+// @route   DELETE /api/auth/profile
+// @desc    Delete user account and all associated data
+// @access  Private
+router.delete('/profile',
+  passport.authenticate('jwt', { session: false }),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const user = req.user as IUser;
+
+      // Delete all tasks owned by the user
+      await Task.deleteMany({ owner: user._id });
+
+      // Remove user from tasks they were shared with
+      await Task.updateMany(
+        { sharedWith: user._id },
+        { $pull: { sharedWith: user._id } }
+      );
+
+      // Delete user's profile picture from Cloudinary if it exists
+      if (user.profilePicture && user.profilePicture.includes('cloudinary')) {
+        try {
+          const publicId = `taskflow/profiles/user_${user._id}`;
+          await cloudinary.uploader.destroy(publicId);
+        } catch (cloudinaryError) {
+          console.error('Error deleting profile picture from Cloudinary:', cloudinaryError);
+          // Continue with account deletion even if picture deletion fails
+        }
+      }
+
+      // Delete the user from Firebase Auth if firebaseUid exists
+      if (user.firebaseUid) {
+        try {
+          await adminAuth.deleteUser(user.firebaseUid);
+          console.log('User deleted from Firebase Auth');
+        } catch (firebaseError) {
+          console.error('Error deleting user from Firebase:', firebaseError);
+          // Continue with database deletion even if Firebase deletion fails
+        }
+      }
+
+      // Delete user from database
+      await User.findByIdAndDelete(user._id);
+
+      console.log(`User account deleted: ${user.email}`);
+
+      res.json({
+        success: true,
+        message: 'Account deleted successfully'
+      });
+    } catch (error) {
+      console.error('Delete account error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to delete account'
+      });
+    }
+  }
+);
 
 export default router;

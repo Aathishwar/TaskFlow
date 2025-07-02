@@ -5,6 +5,10 @@ export interface User {
   email: string;
   displayName: string;
   profilePicture?: string;
+  bio?: string;
+  phone?: string;
+  location?: string;
+  googleId?: string;
 }
 
 export interface Task {

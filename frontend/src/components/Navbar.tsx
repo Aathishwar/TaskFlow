@@ -11,11 +11,13 @@ import {
   Text,
   useColorModeValue,
 } from '@chakra-ui/react';
-import { ChevronDownIcon } from '@chakra-ui/icons';
+import { ChevronDownIcon, SettingsIcon } from '@chakra-ui/icons';
 import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 const Navbar = () => {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const bg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
 
@@ -39,9 +41,12 @@ const Navbar = () => {
               as={Button}
               variant="ghost"
               rightIcon={<ChevronDownIcon />}
-              _hover={{ bg: 'brand.50' }}
-              bg="transparent"
-              color="brand.600"
+              bg={useColorModeValue('transparent', 'gray.700')}
+              color={useColorModeValue('brand.600', 'white')}
+              _hover={{ 
+                bg: useColorModeValue('brand.50', 'brand.600'),
+                color: useColorModeValue('brand.600', 'white')
+              }}
             >
               <HStack spacing={2}>
                 <Avatar
@@ -53,22 +58,32 @@ const Navbar = () => {
               </HStack>
             </MenuButton>
             <MenuList
-              bg="white"
-              borderColor="brand.200"
+              bg={useColorModeValue('white', 'gray.800')}
+              borderColor={useColorModeValue('brand.200', 'gray.600')}
               boxShadow="lg"
             >
-              <MenuItem _hover={{ bg: 'brand.50' }}>
-                <Box>
-                  <Text fontWeight="medium" color="brand.700">{user?.displayName}</Text>
-                  <Text fontSize="sm" color="brand.500">
-                    {user?.email}
-                  </Text>
-                </Box>
+              <MenuItem 
+                onClick={() => navigate('/profile')}
+                bg={useColorModeValue('transparent', 'gray.700')}
+                color={useColorModeValue('gray.700', 'white')}
+                _hover={{ 
+                  bg: useColorModeValue('brand.50', 'brand.600'),
+                  color: useColorModeValue('brand.600', 'white')
+                }}
+              >
+                <HStack spacing={2}>
+                  <SettingsIcon />
+                  <Text>Profile</Text>
+                </HStack>
               </MenuItem>
               <MenuItem 
                 onClick={logout} 
-                color="red.500"
-                _hover={{ bg: 'red.50' }}
+                bg={useColorModeValue('transparent', 'gray.700')}
+                color={useColorModeValue('red.500', 'red.300')}
+                _hover={{ 
+                  bg: useColorModeValue('red.50', 'red.600'),
+                  color: useColorModeValue('red.600', 'white')
+                }}
               >
                 Sign Out
               </MenuItem>

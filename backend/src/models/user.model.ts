@@ -7,6 +7,9 @@ export interface IUser extends Document {
   email: string;
   displayName: string;
   profilePicture?: string;
+  bio?: string;
+  phone?: string;
+  location?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -40,6 +43,20 @@ const UserSchema: Schema = new Schema({
   profilePicture: {
     type: String,
     default: ''
+  },
+  bio: {
+    type: String,
+    default: '',
+    maxlength: 500
+  },
+  phone: {
+    type: String,
+    default: ''
+  },
+  location: {
+    type: String,
+    default: '',
+    maxlength: 100
   }
 }, {
   timestamps: true,

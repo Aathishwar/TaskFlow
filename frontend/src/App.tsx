@@ -4,6 +4,7 @@ import { Box, Text, VStack } from '@chakra-ui/react';
 import { useAuth } from './contexts/AuthContext';
 import Login from './pages/Login';
 import DashboardPage from './pages/DashboardPage';
+import ProfilePage from './pages/ProfilePage';
 import Home from './pages/Home';
 import LoadingSpinner from './components/LoadingSpinner';
 import ModeChanger from './components/ModeChanger';
@@ -112,6 +113,14 @@ function App() {
           element={
             <ProtectedRoute>
               <DashboardPage />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/profile" 
+          element={
+            <ProtectedRoute>
+              <ProfilePage />
             </ProtectedRoute>
           } 
         />
