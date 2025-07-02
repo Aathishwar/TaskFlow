@@ -29,6 +29,7 @@ const io = new Server(server, {
       'http://localhost:5173',
       'http://localhost:3000',
       'https://astonishing-sfogliatella-579b6f.netlify.app',
+      'https://task-flow-frontend-azure.vercel.app/',
       process.env.CLIENT_URL,
       process.env.FRONTEND_URL,
       // Parse CORS_ORIGINS environment variable (comma-separated)
@@ -115,7 +116,7 @@ app.use(cors({
       'http://192.168.192.1:5173',
       'http://192.168.205.66:5173',
       'https://astonishing-sfogliatella-579b6f.netlify.app',
-      'https://task-flow-frontend-bice.vercel.app',
+      'https://task-flow-frontend-azure.vercel.app',
       process.env.CLIENT_URL,
       process.env.FRONTEND_URL,
       // Parse CORS_ORIGINS environment variable (comma-separated)
