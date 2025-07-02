@@ -9,13 +9,15 @@ A production-ready, multi-user task management application with real-time collab
 ✅ **Real-time Updates**: Live task updates via WebSocket connections  
 ✅ **Secure Authentication**: Firebase Authentication with JWT tokens  
 ✅ **Task Sharing**: Share tasks with other users via email  
+✅ **Notifications**: Smart reminders for tasks due soon  
+✅ **Profile Management**: Full user profile control with picture upload  
 ✅ **Production Ready**: Fully configured for deployment  
-✅ **Fixed Realtime Issues**: Resolved socket connection and time validation problems  
+✅ **Fixed Realtime Issues**: Resolved socket connection and time validation problems 
 
 ## 🚀 Production Deployment
 
-- **TaskFlow**: [Live App](https://astonishing-sfogliatella-579b6f.netlify.app/)
-- 
+- **Netlify**: [Live App](https://astonishing-sfogliatella-579b6f.netlify.app/)
+- **Vercel**: [Live App](https://task-flow-frontend-azure.vercel.app/)
 ## 🎥 Multi-User Demo
 
 📹 **Test with Multiple Users:**
@@ -94,26 +96,38 @@ The application follows a modern microservices architecture:
 ## 🚀 Features
 
 ### Core Features
-- ✅ **User Authentication** - Firebase Authentication integration
-- ✅ **Task CRUD Operations** - Create, read, update, delete tasks
-- ✅ **Real-time Updates** - Live task updates without page refresh
-- ✅ **Task Sharing** - Share tasks with other users by email
-- ✅ **Responsive Design** - Works on desktop and mobile devices
+✅ **User Authentication**  
+✅ **Task CRUD Operations**  
+✅ **Real-time Updates**  
+✅ **Task Sharing**  
+✅ **Responsive Design**  
 
 ### Task Management
-- ✅ **Task Properties**: Title, description, status, priority, due date
-- ✅ **Task Status**: Pending, In Progress, Completed
-- ✅ **Priority Levels**: Low, Medium, High
-- ✅ **Due Date Tracking**: Visual indicators for overdue and due-soon tasks
-- ✅ **Task Filtering**: Filter by status, priority, and search terms
-- ✅ **Pagination**: Efficient loading of large task lists
+✅ Title, description, status, priority, due date  
+✅ Status: Pending, In Progress, Completed  
+✅ Priority: Low, Medium, High  
+✅ Due tracking with visual indicators  
+✅ Filter by status, priority, search terms  
+✅ Pagination support  
+
+### Notifications System
+⏰ Alerts 1 hour before due time  
+🎯 Only for incomplete tasks  
+🔄 Auto-sync across logged-in devices  
+💾 Persistent toggle in localStorage  
+🔔 Can be toggled in profile settings  
+✅ No server-side tracking, browser-only  
+
+### Profile Management
+👤 View & edit display name, bio, phone, location  
+🖼 Upload profile picture (Cloudinary or base64 fallback)  
+🗑 Secure account deletion with full data cleanup  
+📦 Settings saved and validated with error handling  
+✅ Responsive Chakra UI layout  
 
 ### User Experience
-- ✅ **Modern UI**: Clean, intuitive interface built with Chakra UI
-- ✅ **Real-time Notifications**: Toast notifications for user actions
-- ✅ **Error Handling**: Comprehensive error boundaries and validation
-- ✅ **Loading States**: Visual feedback during async operations
-- ✅ **Responsive Layout**: Optimized for all screen sizes
+✅ Modern UI, toast notifications, form validation, loading states, mobile responsive  
+
 
 ## 📁 Project Structure
 
@@ -140,8 +154,6 @@ Katomaran/
 │   │   └── theme/          # Chakra UI theme configuration
 │   ├── package.json
 │   └── vite.config.ts
-├── start-production.sh     # Production startup script (Linux/Mac)
-├── start-production.bat    # Production startup script (Windows)
 └── README.md              # This file
 ```
 
