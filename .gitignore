@@ -1,0 +1,21 @@
+# Node.js dependencies
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Environment variables
+.env
+
+# Build outputs
+dist/
+build/
+
+# Log files
+*.log
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Firebase Admin SDK key (sensitive)
+todo-5adbc-firebase-adminsdk-fbsvc-6b585fa60d.json
