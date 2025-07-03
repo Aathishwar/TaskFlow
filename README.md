@@ -16,8 +16,9 @@ A production-ready, multi-user task management application with real-time collab
 
 ## 🚀 Production Deployment
 
-- **Netlify**: [Live App](https://astonishing-sfogliatella-579b6f.netlify.app/)
 - **Vercel**: [Live App](https://task-flow-frontend-azure.vercel.app/)
+- **Netlify**: [Live App](https://astonishing-sfogliatella-579b6f.netlify.app/)
+
 ## 🎥 Multi-User Demo
 
 📹 **Test with Multiple Users:**
