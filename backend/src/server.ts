@@ -148,6 +148,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(passport.initialize());
 
 // Handle preflight requests explicitly
+
 app.options('*', (req, res) => {
   res.header('Access-Control-Allow-Origin', req.headers.origin);
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
