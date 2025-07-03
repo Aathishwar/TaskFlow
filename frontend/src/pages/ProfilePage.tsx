@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Box,
   Container,
@@ -28,21 +28,24 @@ import {
   IconButton,
   Tooltip
 } from '@chakra-ui/react';
-import { EditIcon, DeleteIcon } from '@chakra-ui/icons';
+import { EditIcon, DeleteIcon, ArrowBackIcon } from '@chakra-ui/icons';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import NotificationSettings from '../components/NotificationSettings';
 
 const ProfilePage: React.FC = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, updateUser } = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isUploadingPicture, setIsUploadingPicture] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [forceRefresh, setForceRefresh] = useState(0); // Add force refresh counter
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(
     localStorage.getItem('taskflow-notifications-enabled') === 'true' || false
   );
@@ -63,6 +66,20 @@ const ProfilePage: React.FC = () => {
   const inputTextColor = useColorModeValue('gray.900', 'white');
   const inputBg = useColorModeValue('white', 'gray.700');
   const readOnlyBg = useColorModeValue('gray.50', 'gray.600');
+  const backButtonHoverBg = useColorModeValue('gray.100', 'gray.700');
+
+  // Update form data when user changes
+  useEffect(() => {
+    if (user) {
+      setFormData({
+        displayName: user.displayName || '',
+        email: user.email || '',
+        bio: user.bio || '',
+        phone: user.phone || '',
+        location: user.location || ''
+      });
+    }
+  }, [user]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -100,7 +117,15 @@ const ProfilePage: React.FC = () => {
       return;
     }
 
-    setIsLoading(true);
+    // Create and set preview immediately
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result as string;
+      setPreviewImage(result);
+    };
+    reader.readAsDataURL(file);
+
+    setIsUploadingPicture(true);
     try {
       const formData = new FormData();
       formData.append('profilePicture', file);
@@ -112,6 +137,20 @@ const ProfilePage: React.FC = () => {
       });
 
       if (response.data.success) {
+        // Update user context immediately with new profile picture
+        const updatedUser = response.data.user;
+        
+        // Update the user context
+        updateUser({
+          profilePicture: updatedUser.profilePicture
+        });
+        
+        // Force a component re-render to ensure UI updates
+        setForceRefresh(prev => prev + 1);
+        
+        // Also update the form data to reflect the change
+        // Note: formData doesn't have profilePicture field, but keeping for consistency
+        
         toast({
           title: 'Success',
           description: 'Profile picture updated successfully',
@@ -120,11 +159,18 @@ const ProfilePage: React.FC = () => {
           isClosable: true
         });
         
-        // Refresh the page to update the user context
-        window.location.reload();
+        // Clear preview after successful update
+        setPreviewImage(null);
+        
+        // Clear the file input
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
       }
     } catch (error: any) {
       console.error('Error updating profile picture:', error);
+      // Clear preview on error
+      setPreviewImage(null);
       toast({
         title: 'Error',
         description: error.response?.data?.message || 'Failed to update profile picture',
@@ -133,7 +179,7 @@ const ProfilePage: React.FC = () => {
         isClosable: true
       });
     } finally {
-      setIsLoading(false);
+      setIsUploadingPicture(false);
     }
   };
 
@@ -149,6 +195,25 @@ const ProfilePage: React.FC = () => {
       return;
     }
 
+    // Check if any changes were made
+    const hasChanges = 
+      formData.displayName.trim() !== (user?.displayName || '') ||
+      formData.bio.trim() !== (user?.bio || '') ||
+      formData.phone.trim() !== (user?.phone || '') ||
+      formData.location.trim() !== (user?.location || '');
+
+    if (!hasChanges) {
+      toast({
+        title: 'No Changes',
+        description: 'No changes detected to save',
+        status: 'info',
+        duration: 3000,
+        isClosable: true
+      });
+      setIsEditing(false);
+      return;
+    }
+
     setIsLoading(true);
     try {
       const response = await api.put('/auth/profile', {
@@ -159,6 +224,15 @@ const ProfilePage: React.FC = () => {
       });
 
       if (response.data.success) {
+        // Update user context with new data immediately
+        const updatedUser = response.data.user;
+        updateUser({
+          displayName: updatedUser.displayName,
+          bio: updatedUser.bio,
+          phone: updatedUser.phone,
+          location: updatedUser.location
+        });
+        
         toast({
           title: 'Success',
           description: 'Profile updated successfully',
@@ -168,8 +242,6 @@ const ProfilePage: React.FC = () => {
         });
         
         setIsEditing(false);
-        // Refresh the page to update the user context
-        window.location.reload();
       }
     } catch (error: any) {
       console.error('Error updating profile:', error);
@@ -256,217 +328,301 @@ const ProfilePage: React.FC = () => {
   }
 
   return (
-    <Container maxW="4xl" py={8}>
-      <VStack spacing={6} align="stretch">
-        {/* Header */}
-        <Box>
-          <Heading size="lg" mb={2}>Profile Settings</Heading>
-          <Text color={textColor}>Manage your account information and preferences</Text>
-        </Box>
+    <Container maxW="6xl" py={8}>
+      <VStack spacing={8} align="stretch">
+        {/* Header with Back Button on the left side */}
+        <HStack spacing={6} align="flex-start" w="full">
+          {/* Back Button - Outside main content column */}
+          <Box pt={2}>
+            <Tooltip label="Go back">
+              <IconButton
+                aria-label="Go back"
+                icon={<ArrowBackIcon />}
+                size="lg"
+                variant="outline"
+                borderRadius="full"
+                onClick={() => navigate(-1)}
+                bg={bg}
+                borderColor={borderColor}
+                _hover={{
+                  bg: backButtonHoverBg,
+                  transform: "translateY(-1px)",
+                  boxShadow: "md"
+                }}
+                _active={{
+                  transform: "translateY(0)"
+                }}
+                transition="all 0.2s"
+              />
+            </Tooltip>
+          </Box>
 
-        {/* Profile Picture Section */}
-        <Card bg={bg} borderColor={borderColor}>
-          <CardHeader>
-            <Heading size="md">Profile Picture</Heading>
-          </CardHeader>
-          <CardBody>
-            <HStack spacing={6} align="center">
-              <Box position="relative">
-                <Avatar
-                  size="2xl"
-                  src={user.profilePicture}
-                  name={user.displayName}
-                />
-                {isLoading && (
-                  <Box
-                    position="absolute"
-                    top="0"
-                    left="0"
-                    right="0"
-                    bottom="0"
-                    bg="blackAlpha.600"
-                    borderRadius="full"
-                    display="flex"
-                    alignItems="center"
-                    justifyContent="center"
-                  >
-                    <Spinner color="white" />
-                  </Box>
+          {/* Main Content Column */}
+          <VStack spacing={6} align="stretch" flex={1} maxW="4xl">
+            {/* Header */}
+            <Box>
+              <Heading size="lg" mb={2}>Profile Settings</Heading>
+              <Text color={textColor}>
+                Manage your account information and preferences
+                {user?.googleId && (
+                  <Text as="span" fontSize="sm" color="blue.500" ml={2}>
+                    (Google Account)
+                  </Text>
                 )}
-              </Box>
-              <VStack align="start" spacing={2}>
-                <Text fontWeight="medium">Update your profile picture</Text>
-                <Text fontSize="sm" color={textColor}>
-                  Supported formats: JPG, PNG, GIF. Max size: 5MB
-                </Text>
-                <Button
-                  size="sm"
-                  colorScheme="brand"
-                  onClick={() => fileInputRef.current?.click()}
-                  isLoading={isLoading}
-                  loadingText="Uploading..."
-                >
-                  Choose File
-                </Button>
-                <Input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleProfilePictureChange}
-                  style={{ display: 'none' }}
-                />
-              </VStack>
-            </HStack>
-          </CardBody>
-        </Card>
+              </Text>
+            </Box>
 
-        {/* Personal Information */}
-        <Card bg={bg} borderColor={borderColor}>
-          <CardHeader>
-            <HStack justify="space-between" align="center">
-              <Heading size="md">Personal Information</Heading>
-              {!isEditing && (
-                <Tooltip label="Edit profile">
-                  <IconButton
-                    aria-label="Edit profile"
-                    icon={<EditIcon />}
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setIsEditing(true)}
-                  />
-                </Tooltip>
-              )}
-            </HStack>
-          </CardHeader>
-          <CardBody>
-            <VStack spacing={4} align="stretch">
-              <FormControl>
-                <FormLabel>Display Name</FormLabel>
-                <Input
-                  name="displayName"
-                  value={formData.displayName}
-                  onChange={handleInputChange}
-                  isReadOnly={!isEditing}
-                  bg={isEditing ? inputBg : readOnlyBg}
-                  color={inputTextColor}
-                />
-              </FormControl>
-              
-              <FormControl>
-                <FormLabel>Email Address</FormLabel>
-                <Input
-                  name="email"
-                  value={formData.email}
-                  isReadOnly
-                  bg={readOnlyBg}
-                  color={inputTextColor}
-                />
-                <Text fontSize="sm" color={textColor} mt={1}>
-                  Email cannot be changed
-                </Text>
-              </FormControl>
-
-              <FormControl>
-                <FormLabel>Bio</FormLabel>
-                <Textarea
-                  name="bio"
-                  value={formData.bio}
-                  onChange={(e) => setFormData(prev => ({ ...prev, bio: e.target.value }))}
-                  placeholder="Tell us about yourself..."
-                  isReadOnly={!isEditing}
-                  bg={isEditing ? inputBg : readOnlyBg}
-                  color={inputTextColor}
-                  rows={3}
-                  maxLength={500}
-                />
-                <Text fontSize="sm" color={textColor} mt={1}>
-                  {formData.bio.length}/500 characters
-                </Text>
-              </FormControl>
-
-              <FormControl>
-                <FormLabel>Phone Number</FormLabel>
-                <Input
-                  name="phone"
-                  value={formData.phone}
-                  onChange={handleInputChange}
-                  placeholder="Enter your phone number"
-                  isReadOnly={!isEditing}
-                  bg={isEditing ? inputBg : readOnlyBg}
-                  color={inputTextColor}
-                />
-              </FormControl>
-
-              <FormControl>
-                <FormLabel>Location</FormLabel>
-                <Input
-                  name="location"
-                  value={formData.location}
-                  onChange={handleInputChange}
-                  placeholder="Enter your location"
-                  isReadOnly={!isEditing}
-                  bg={isEditing ? inputBg : readOnlyBg}
-                  color={inputTextColor}
-                  maxLength={100}
-                />
-              </FormControl>
-              
-              {isEditing && (
-                <HStack spacing={3} pt={4}>
-                  <Button
-                    colorScheme="brand"
-                    onClick={handleSaveProfile}
-                    isLoading={isLoading}
-                    loadingText="Saving..."
-                  >
-                    Save Changes
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={handleCancel}
-                    isDisabled={isLoading}
-                  >
-                    Cancel
-                  </Button>
+            {/* Profile Picture Section */}
+            <Card bg={bg} borderColor={borderColor}>
+              <CardHeader>
+                <Heading size="md">Profile Picture</Heading>
+              </CardHeader>
+              <CardBody>
+                <HStack spacing={6} align="center">
+                  <Box position="relative">
+                    <Avatar
+                      key={`avatar-${forceRefresh}`} // Force re-render with key
+                      size="2xl"
+                      src={previewImage || user.profilePicture || undefined}
+                      name={user.displayName}
+                      bg={previewImage ? "transparent" : undefined}
+                    />
+                    {isUploadingPicture && (
+                      <Box
+                        position="absolute"
+                        top="0"
+                        left="0"
+                        right="0"
+                        bottom="0"
+                        bg="blackAlpha.600"
+                        borderRadius="full"
+                        display="flex"
+                        alignItems="center"
+                        justifyContent="center"
+                      >
+                        <Spinner color="white" />
+                      </Box>
+                    )}
+                    {previewImage && !isUploadingPicture && (
+                      <Box
+                        position="absolute"
+                        top="-2"
+                        right="-2"
+                        bg="green.500"
+                        color="white"
+                        borderRadius="full"
+                        w="6"
+                        h="6"
+                        display="flex"
+                        alignItems="center"
+                        justifyContent="center"
+                        fontSize="xs"
+                        fontWeight="bold"
+                      >
+                        ✓
+                      </Box>
+                    )}
+                  </Box>
+                  <VStack align="start" spacing={2}>
+                    <Text fontWeight="medium">Update your profile picture</Text>
+                    <Text fontSize="sm" color={textColor}>
+                      Supported formats: JPG, PNG, GIF. Max size: 5MB
+                    </Text>
+                    {previewImage && !isUploadingPicture && (
+                      <Text fontSize="sm" color="green.500" fontWeight="medium">
+                        ✓ Image ready to upload!
+                      </Text>
+                    )}
+                    <HStack spacing={2}>
+                      <Button
+                        size="sm"
+                        colorScheme="brand"
+                        onClick={() => fileInputRef.current?.click()}
+                        isLoading={isUploadingPicture}
+                        loadingText="Uploading..."
+                        isDisabled={isUploadingPicture}
+                      >
+                        Choose File
+                      </Button>
+                      {previewImage && !isUploadingPicture && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          colorScheme="gray"
+                          onClick={() => {
+                            setPreviewImage(null);
+                            if (fileInputRef.current) {
+                              fileInputRef.current.value = '';
+                            }
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      )}
+                    </HStack>
+                    <Input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleProfilePictureChange}
+                      style={{ display: 'none' }}
+                    />
+                  </VStack>
                 </HStack>
-              )}
-            </VStack>
-          </CardBody>
-        </Card>
+              </CardBody>
+            </Card>
 
-        {/* Notification Settings */}
-        <NotificationSettings
-          isEnabled={notificationsEnabled}
-          onToggle={handleNotificationToggle}
-        />
+            {/* Personal Information */}
+            <Card bg={bg} borderColor={borderColor}>
+              <CardHeader>
+                <HStack justify="space-between" align="center">
+                  <Heading size="md">Personal Information</Heading>
+                  {!isEditing && (
+                    <Tooltip label="Edit profile">
+                      <IconButton
+                        aria-label="Edit profile"
+                        icon={<EditIcon />}
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setIsEditing(true)}
+                        isDisabled={isUploadingPicture}
+                      />
+                    </Tooltip>
+                  )}
+                </HStack>
+              </CardHeader>
+              <CardBody>
+                <VStack spacing={4} align="stretch">
+                  <FormControl>
+                    <FormLabel>Display Name</FormLabel>
+                    <Input
+                      name="displayName"
+                      value={formData.displayName}
+                      onChange={handleInputChange}
+                      isReadOnly={!isEditing}
+                      bg={isEditing ? inputBg : readOnlyBg}
+                      color={inputTextColor}
+                    />
+                  </FormControl>
+                  
+                  <FormControl>
+                    <FormLabel>Email Address</FormLabel>
+                    <Input
+                      name="email"
+                      value={formData.email}
+                      isReadOnly
+                      bg={readOnlyBg}
+                      color={inputTextColor}
+                    />
+                    <Text fontSize="sm" color={textColor} mt={1}>
+                      Email cannot be changed
+                    </Text>
+                  </FormControl>
 
-        {/* Danger Zone */}
-        <Card bg={bg} borderColor="red.200">
-          <CardHeader>
-            <Heading size="md" color="red.600">Danger Zone</Heading>
-          </CardHeader>
-          <CardBody>
-            <VStack spacing={4} align="stretch">
-              <Box>
-                <Text fontWeight="medium" color="red.600" mb={2}>
-                  Delete Account
-                </Text>
-                <Text fontSize="sm" color={textColor} mb={4}>
-                  Permanently delete your account and all associated data. This action cannot be undone.
-                </Text>
-                <Button
-                  leftIcon={<DeleteIcon />}
-                  colorScheme="red"
-                  variant="outline"
-                  size="sm"
-                  onClick={onOpen}
-                >
-                  Delete Account
-                </Button>
-              </Box>
-            </VStack>
-          </CardBody>
-        </Card>
+                  <FormControl>
+                    <FormLabel>Bio</FormLabel>
+                    <Textarea
+                      name="bio"
+                      value={formData.bio}
+                      onChange={(e) => setFormData(prev => ({ ...prev, bio: e.target.value }))}
+                      placeholder="Tell us about yourself..."
+                      isReadOnly={!isEditing}
+                      bg={isEditing ? inputBg : readOnlyBg}
+                      color={inputTextColor}
+                      rows={3}
+                      maxLength={500}
+                    />
+                    <Text fontSize="sm" color={textColor} mt={1}>
+                      {formData.bio.length}/500 characters
+                    </Text>
+                  </FormControl>
+
+                  <FormControl>
+                    <FormLabel>Phone Number</FormLabel>
+                    <Input
+                      name="phone"
+                      value={formData.phone}
+                      onChange={handleInputChange}
+                      placeholder="Enter your phone number"
+                      isReadOnly={!isEditing}
+                      bg={isEditing ? inputBg : readOnlyBg}
+                      color={inputTextColor}
+                    />
+                  </FormControl>
+
+                  <FormControl>
+                    <FormLabel>Location</FormLabel>
+                    <Input
+                      name="location"
+                      value={formData.location}
+                      onChange={handleInputChange}
+                      placeholder="Enter your location"
+                      isReadOnly={!isEditing}
+                      bg={isEditing ? inputBg : readOnlyBg}
+                      color={inputTextColor}
+                      maxLength={100}
+                    />
+                  </FormControl>
+                  
+                  {isEditing && (
+                    <HStack spacing={3} pt={4}>
+                      <Button
+                        colorScheme="brand"
+                        onClick={handleSaveProfile}
+                        isLoading={isLoading}
+                        loadingText="Saving..."
+                        isDisabled={isUploadingPicture}
+                      >
+                        Save Changes
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={handleCancel}
+                        isDisabled={isLoading || isUploadingPicture}
+                      >
+                        Cancel
+                      </Button>
+                    </HStack>
+                  )}
+                </VStack>
+              </CardBody>
+            </Card>
+
+            {/* Notification Settings */}
+            <NotificationSettings
+              isEnabled={notificationsEnabled}
+              onToggle={handleNotificationToggle}
+            />
+
+            {/* Danger Zone */}
+            <Card bg={bg} borderColor="red.200">
+              <CardHeader>
+                <Heading size="md" color="red.600">Danger Zone</Heading>
+              </CardHeader>
+              <CardBody>
+                <VStack spacing={4} align="stretch">
+                  <Box>
+                    <Text fontWeight="medium" color="red.600" mb={2}>
+                      Delete Account
+                    </Text>
+                    <Text fontSize="sm" color={textColor} mb={4}>
+                      Permanently delete your account and all associated data. This action cannot be undone.
+                    </Text>
+                    <Button
+                      leftIcon={<DeleteIcon />}
+                      colorScheme="red"
+                      variant="outline"
+                      size="sm"
+                      onClick={onOpen}
+                    >
+                      Delete Account
+                    </Button>
+                  </Box>
+                </VStack>
+              </CardBody>
+            </Card>
+          </VStack>
+        </HStack>
       </VStack>
 
       {/* Delete Confirmation Dialog */}

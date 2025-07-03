@@ -42,7 +42,7 @@ interface ForgotPasswordFormData {
 }
 
 const Login: React.FC = () => {
-  const { login, registerWithGoogle, resetPassword } = useAuth();
+  const { login, registerWithGoogle, resetPassword, authInitialized, initializeAuthIfNeeded } = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
   const [showPassword, setShowPassword] = useState(false);
@@ -50,6 +50,13 @@ const Login: React.FC = () => {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isResetLoading, setIsResetLoading] = useState(false);
   const { isOpen: isResetOpen, onOpen: onResetOpen, onClose: onResetClose } = useDisclosure();
+
+  // Initialize auth when user reaches login page
+  React.useEffect(() => {
+    if (!authInitialized) {
+      initializeAuthIfNeeded();
+    }
+  }, [authInitialized, initializeAuthIfNeeded]);
 
   const {
     register,
@@ -72,14 +79,35 @@ const Login: React.FC = () => {
       navigate('/dashboard');
     } catch (error: any) {
       console.error('Login failed:', error);
-      // Don't auto-navigate on error, let user try again or go to register manually
-      toast({ 
-        title: 'Login failed', 
-        description: error.message || 'Please check your credentials and try again', 
-        status: 'error', 
-        duration: 5000, 
-        isClosable: true 
-      });
+      
+      // Provide specific guidance for user-not-found errors
+      if (error.code === 'auth/user-not-found') {
+        toast({ 
+          title: 'Account not found', 
+          description: 'No account exists with this email. Click here to create one instead.', 
+          status: 'warning', 
+          duration: 7000, 
+          isClosable: true
+        });
+        // Small delay then show a follow-up toast with the action
+        setTimeout(() => {
+          toast({
+            title: '💡 Quick tip',
+            description: 'New to TaskFlow? Click "Sign Up" below to create your account.',
+            status: 'info',
+            duration: 5000,
+            isClosable: true
+          });
+        }, 1000);
+      } else {
+        toast({ 
+          title: 'Login failed', 
+          description: error.message || 'Please check your credentials and try again', 
+          status: 'error', 
+          duration: 5000, 
+          isClosable: true 
+        });
+      }
     } finally {
       setIsLoading(false);
     }

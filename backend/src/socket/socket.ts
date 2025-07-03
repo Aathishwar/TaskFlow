@@ -4,6 +4,21 @@ import { Server } from 'socket.io';
 import User from '../models/user.model';
 import admin from 'firebase-admin'; // Import the firebase-admin module
 
+// Rate limiting for socket logs to prevent spam
+const socketLogCache = new Map<string, number>();
+const LOG_COOLDOWN = 30000; // 30 seconds between logs per user
+
+const shouldLog = (userId: string): boolean => {
+  const now = Date.now();
+  const lastLog = socketLogCache.get(userId) || 0;
+  
+  if (now - lastLog > LOG_COOLDOWN) {
+    socketLogCache.set(userId, now);
+    return true;
+  }
+  return false;
+};
+
 export const setupSocketIO = (io: Server): void => {
   // Middleware to authenticate socket connections
   io.use(async (socket, next) => {
@@ -11,31 +26,28 @@ export const setupSocketIO = (io: Server): void => {
       const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.replace('Bearer ', '');
 
       if (!token) {
-        console.log('🔒 Socket connection rejected: No authentication token');
         return next(new Error('Authentication token required'));
       }
 
       // Use Firebase Admin SDK to verify the ID token
       const decodedToken = await admin.auth().verifyIdToken(token);
-      console.log('🔐 Socket middleware: Decoded token:', { uid: decodedToken.uid, email: decodedToken.email });
       
       // Find the user by firebaseUid or email
       let user = await User.findOne({ firebaseUid: decodedToken.uid });
-      console.log('🔍 Socket middleware: User lookup by firebaseUid result:', user ? user.email : 'Not found');
 
       if (!user && decodedToken.email) {
-        console.log('🔍 User not found by firebaseUid, attempting lookup by email...');
         user = await User.findOne({ email: decodedToken.email });
-        console.log('🔍 Socket middleware: User lookup by email result:', user ? user.email : 'Not found');
       }
 
       if (!user) {
-        console.log('🔒 Socket connection rejected: User not found');
         return next(new Error('User not found'));
       }
 
       (socket as any).user = user;
-      console.log(`🔌 Socket authenticated for user: ${user.email} (${user.displayName})`);
+      // Only log new socket connections with rate limiting
+      if (shouldLog(user._id.toString())) {
+        console.log(`🔌 Socket: ${user.email} connected`);
+      }
       next();
     } catch (error: any) {
       console.log('🔒 Socket authentication failed:', error.message);
@@ -73,7 +85,7 @@ export const setupSocketIO = (io: Server): void => {
 
     // Test event handler for debugging
     socket.on('test_event', (data) => {
-      console.log(`🧪 Test event received from ${user.email}:`, data);
+      // console.log(`🧪 Test event received from ${user.email}:`, data);
       socket.emit('test_response', { 
         message: `Hello ${user.displayName}!`, 
         timestamp: new Date().toISOString(),
@@ -96,9 +108,12 @@ export const setupSocketIO = (io: Server): void => {
       console.error(`🚨 Socket error for ${user.email}:`, error);
     });
 
-    // Handle reconnection
+    // Handle reconnection (reduce logging noise with rate limiting)
     socket.on('reconnect', (attemptNumber) => {
-      console.log(`🔄 User reconnected: ${socket.id} - ${user.email} (attempt: ${attemptNumber})`);
+      // Only log reconnections after multiple attempts and with rate limiting
+      if (attemptNumber > 3 && shouldLog(user._id.toString() + '_reconnect')) {
+        console.log(`🔄 ${user.email} reconnected after ${attemptNumber} attempts`);
+      }
     });
   });
 
@@ -115,27 +130,48 @@ export const setupSocketIO = (io: Server): void => {
 
 // Helper functions to emit events to specific users or rooms
 export const emitToUser = (io: Server, userId: string, event: string, data: any) => {
-  console.log(`📤 Emitting ${event} to user ${userId}:`, data);
+  console.log(`📤 Emitting ${event} to user ${userId}`);
   io.to(userId).emit(event, data);
 };
 
 export const emitToUsers = (io: Server, userIds: string[], event: string, data: any) => {
-  console.log(`📤 Emitting ${event} to users ${userIds.join(', ')}:`, data);
+  console.log(`📤 Emitting ${event} to users ${userIds.join(', ')}`);
   userIds.forEach(userId => {
     io.to(userId).emit(event, data);
   });
 };
 
 export const emitToRoom = (io: Server, roomId: string, event: string, data: any) => {
-  console.log(`📤 Emitting ${event} to room ${roomId}:`, data);
+  console.log(`📤 Emitting ${event} to room ${roomId}`);
   io.to(roomId).emit(event, data);
+};
+
+// Helper function to sanitize task data for socket emission
+const sanitizeTaskForEmission = (task: any) => {
+  const taskData = task.toObject ? task.toObject() : task;
+  
+  // Create a clean copy - since we're moving away from base64, this is much simpler
+  const sanitizedTask = {
+    ...taskData,
+    // If owner is populated, include all data (URLs are small and efficient)
+    owner: taskData.owner ? {
+      _id: taskData.owner._id,
+      email: taskData.owner.email,
+      displayName: taskData.owner.displayName,
+      // All profile pictures are now URLs (Cloudinary), so safe to include
+      profilePicture: taskData.owner.profilePicture || ''
+    } : taskData.owner
+  };
+  
+  return sanitizedTask;
 };
 
 // Task-specific event emitters with improved error handling
 export const emitTaskCreated = (io: Server, task: any, recipients: string[]) => {
   try {
+    const sanitizedTask = sanitizeTaskForEmission(task);
     const eventData = {
-      ...task.toObject ? task.toObject() : task,
+      ...sanitizedTask,
       timestamp: new Date().toISOString(),
       event: 'task_created'
     };
@@ -159,8 +195,9 @@ export const emitTaskCreated = (io: Server, task: any, recipients: string[]) => 
 
 export const emitTaskUpdated = (io: Server, task: any, recipients: string[]) => {
   try {
+    const sanitizedTask = sanitizeTaskForEmission(task);
     const eventData = {
-      ...task.toObject ? task.toObject() : task,
+      ...sanitizedTask,
       timestamp: new Date().toISOString(),
       event: 'task_updated'
     };
@@ -206,8 +243,9 @@ export const emitTaskDeleted = (io: Server, taskId: string, ownerId: string, rec
 
 export const emitTaskShared = (io: Server, task: any, newRecipients: string[]) => {
   try {
+    const sanitizedTask = sanitizeTaskForEmission(task);
     const eventData = {
-      ...task.toObject ? task.toObject() : task,
+      ...sanitizedTask,
       timestamp: new Date().toISOString(),
       event: 'task_shared'
     };

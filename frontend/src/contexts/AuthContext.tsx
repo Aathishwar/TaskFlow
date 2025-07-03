@@ -22,22 +22,27 @@ interface AuthContextType {
   token: string | null; // Add token to context type
   isUserSynced: boolean; // Add user sync status
   firebaseUser: any | null; // Add firebaseUser to context type
+  authInitialized: boolean; // Add auth initialization status
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   register: (email: string, password: string) => Promise<User | null>;
   registerWithGoogle: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   syncUserWithBackend: (firebaseUser: any) => Promise<User>; // Corrected type definition
+  updateUser: (userData: Partial<User>) => void; // Add updateUser function
+  initializeAuthIfNeeded: () => void; // Add function to manually initialize auth
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // Start with false for immediate load
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null); // Add token state
   const [isUserSynced, setIsUserSynced] = useState(false); // Add sync status
   const [firebaseUser, setFirebaseUser] = useState<any | null>(null); // Add firebaseUser state
+  const [skipNextSync, setSkipNextSync] = useState(false); // Add flag to skip sync
+  const [authInitialized, setAuthInitialized] = useState(false); // Track if auth has been initialized
 
   const auth = getAuth();
 
@@ -104,7 +109,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       let errorMessage = 'Login failed';
       
       if (error.code === 'auth/user-not-found') {
-        errorMessage = 'No account found with this email address';
+        errorMessage = 'No account found with this email. Please register first.';
       } else if (error.code === 'auth/wrong-password') {
         errorMessage = 'Incorrect password';
       } else if (error.code === 'auth/too-many-requests') {
@@ -241,63 +246,163 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setFirebaseUser(firebaseUser); // Update firebaseUser state
-      if (firebaseUser) {
-        try {
-          // Fetch and store the ID token
-          const idToken = await firebaseUser.getIdToken();
-          localStorage.setItem('token', idToken); // Keep in localStorage for persistence
-          setToken(idToken); // Update token state
-
-          // Try to sync user with backend, but don't retry too aggressively here
-          // since this runs on every auth state change
+  // Function to manually initialize auth when needed
+  const initializeAuthIfNeeded = () => {
+    if (!authInitialized && !loading) {
+      console.log('🔄 Manually initializing auth...');
+      setLoading(true);
+      
+      const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+        setFirebaseUser(firebaseUser);
+        if (firebaseUser) {
           try {
-            await syncUserWithBackend(firebaseUser);
-          } catch (syncError) {
-            console.error('❌ Backend sync failed on auth state change:', syncError);
-            // Set basic user info from Firebase even if backend sync fails
-            const basicUser: User = {
-              id: firebaseUser.uid,
-              email: firebaseUser.email || '',
-              displayName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || '',
-              profilePicture: firebaseUser.photoURL || '',
-              bio: '',
-              phone: '',
-              location: '',
-              googleId: undefined
-            };
-            setUser(basicUser);
-            setIsUserSynced(false);
-            
-            // Show a subtle warning but don't show toast here as it might be too noisy
-            console.warn('⚠️ User is signed in to Firebase but not synced with backend');
-          }
-        } catch (error) {
-          console.error('❌ Error in auth state change handler:', error);
-          // If even getting the ID token fails, clear everything
-          setUser(null);
-          setToken(null);
-          setIsUserSynced(false);
-          localStorage.removeItem('token');
-        }
-      } else {
-        console.log('👤 User logged out, clearing user data...');
-        setUser(null);
-        setToken(null); // Clear token state on logout
-        setIsUserSynced(false);
-        setFirebaseUser(null); // Clear firebaseUser state on logout
-        // Clear any cached data on logout
-        localStorage.removeItem('token'); // Also remove token on logout
-        localStorage.removeItem('cachedTasks');
-        localStorage.removeItem('cachedFilters');
-      }
-      setLoading(false);
-    });
+            const idToken = await firebaseUser.getIdToken();
+            localStorage.setItem('token', idToken);
+            setToken(idToken);
 
-    return unsubscribe;
-  }, [auth]); // Removed user?.id dependency to prevent infinite loops
+            if (!skipNextSync) {
+              try {
+                await syncUserWithBackend(firebaseUser);
+              } catch (syncError) {
+                console.error('❌ Backend sync failed:', syncError);
+                const basicUser: User = {
+                  id: firebaseUser.uid,
+                  email: firebaseUser.email || '',
+                  displayName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || '',
+                  profilePicture: firebaseUser.photoURL || '',
+                  bio: '',
+                  phone: '',
+                  location: '',
+                  googleId: undefined
+                };
+                setUser(basicUser);
+                setIsUserSynced(false);
+              }
+            }
+          } catch (error) {
+            console.error('❌ Error in manual auth initialization:', error);
+            setUser(null);
+            setToken(null);
+            setIsUserSynced(false);
+            localStorage.removeItem('token');
+          }
+        }
+        setLoading(false);
+        setAuthInitialized(true);
+      });
+      
+      // Store unsubscribe function for later cleanup if needed
+      return unsubscribe;
+    }
+  };
+
+  // Function to update user data in context
+  const updateUser = (userData: Partial<User>) => {
+    console.log('🔄 updateUser called with:', userData);
+    console.log('🔄 Current user before update:', user);
+    
+    if (user) {
+      const updatedUser = { ...user, ...userData };
+      console.log('🔄 Setting updated user:', updatedUser);
+      setUser(updatedUser);
+      
+      // Also update localStorage to persist the change
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+      
+      // Set flag to skip next Firebase sync to prevent override
+      setSkipNextSync(true);
+      setTimeout(() => setSkipNextSync(false), 2000); // Reset after 2 seconds
+    } else {
+      console.log('❌ updateUser called but user is null');
+    }
+  };
+
+  useEffect(() => {
+    // Don't initialize Firebase auth listener immediately
+    // This prevents the loading state on first page load
+    let unsubscribe: (() => void) | null = null;
+    
+    // Only initialize auth if we have a token in localStorage (returning user)
+    // or if user tries to access protected routes
+    const storedToken = localStorage.getItem('token');
+    
+    if (storedToken) {
+      console.log('🔄 Found stored token, initializing auth...');
+      setToken(storedToken);
+      setLoading(true);
+      initializeAuth();
+    } else {
+      console.log('👤 No stored token, skipping auth initialization for faster load');
+      setAuthInitialized(true);
+    }
+    
+    function initializeAuth() {
+      unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+        setFirebaseUser(firebaseUser); // Update firebaseUser state
+        if (firebaseUser) {
+          try {
+            // Fetch and store the ID token
+            const idToken = await firebaseUser.getIdToken();
+            localStorage.setItem('token', idToken); // Keep in localStorage for persistence
+            setToken(idToken); // Update token state
+
+            // Try to sync user with backend, but don't retry too aggressively here
+            // since this runs on every auth state change
+            if (!skipNextSync) {
+              try {
+                await syncUserWithBackend(firebaseUser);
+              } catch (syncError) {
+                console.error('❌ Backend sync failed on auth state change:', syncError);
+                // Set basic user info from Firebase even if backend sync fails
+                const basicUser: User = {
+                  id: firebaseUser.uid,
+                  email: firebaseUser.email || '',
+                  displayName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || '',
+                  profilePicture: firebaseUser.photoURL || '',
+                  bio: '',
+                  phone: '',
+                  location: '',
+                  googleId: undefined
+                };
+                setUser(basicUser);
+                setIsUserSynced(false);
+                
+                // Show a subtle warning but don't show toast here as it might be too noisy
+                console.warn('⚠️ User is signed in to Firebase but not synced with backend');
+              }
+            } else {
+              console.log('🚫 Skipping Firebase sync due to recent manual update');
+            }
+          } catch (error) {
+            console.error('❌ Error in auth state change handler:', error);
+            // If even getting the ID token fails, clear everything
+            setUser(null);
+            setToken(null);
+            setIsUserSynced(false);
+            localStorage.removeItem('token');
+          }
+        } else {
+          console.log('👤 User logged out, clearing user data...');
+          setUser(null);
+          setToken(null); // Clear token state on logout
+          setIsUserSynced(false);
+          setFirebaseUser(null); // Clear firebaseUser state on logout
+          // Clear any cached data on logout
+          localStorage.removeItem('token'); // Also remove token on logout
+          localStorage.removeItem('cachedTasks');
+          localStorage.removeItem('cachedFilters');
+        }
+        setLoading(false);
+        setAuthInitialized(true);
+      });
+    }
+
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, [auth, skipNextSync]); // Include skipNextSync in dependencies
 
   // Add a useEffect to load token from localStorage on initial load
   useEffect(() => {
@@ -314,12 +419,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     token, // Include token in the context value
     isUserSynced, // Include sync status
     firebaseUser, // Include firebaseUser in the context value
+    authInitialized, // Include auth initialization status
     login,
     logout,
     register,
     registerWithGoogle,
     resetPassword,
-    syncUserWithBackend // Include sync function
+    syncUserWithBackend, // Include sync function
+    updateUser, // Include updateUser function
+    initializeAuthIfNeeded // Include manual auth initialization function
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

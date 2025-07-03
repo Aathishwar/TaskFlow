@@ -1,21 +1,22 @@
+// Load environment variables FIRST, before any other imports
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
-import dotenv from 'dotenv';
 import passport from 'passport';
 
+// Cloudinary configuration is now properly set up
 import { connectDB } from './config/database';
 import { configurePassport } from './config/passport';
 import authRoutes from './routes/auth.routes';
 import taskRoutes from './routes/task.routes';
 import { authenticateJWT } from './middleware/auth.middleware';
 import { setupSocketIO } from './socket/socket';
-
-// Load environment variables
-dotenv.config();
 
 const app = express();
 const server = createServer(app);
@@ -128,7 +129,6 @@ app.use(cors({
     if (!origin) return callback(null, true);
     
     if (allowedOrigins.indexOf(origin) !== -1) {
-      console.log(`✅ CORS allowed origin: ${origin}`);
       callback(null, true);
     } else {
       console.log(`❌ CORS blocked origin: ${origin}`);
@@ -164,19 +164,17 @@ app.use((req, res, next) => {
   next();
 });
 
-// Add request logging middleware
+// Add minimal request logging middleware (only for errors and important requests)
 app.use((req, res, next) => {
-  console.log(`🌐 ${req.method} ${req.path} - ${new Date().toISOString()}`);
-  console.log(`📍 Origin: ${req.headers.origin || 'No origin'}`);
-  if (req.method === 'OPTIONS') {
-    console.log('🔍 Preflight request detected');
+  // Only log non-OPTIONS requests to reduce noise
+  if (req.method !== 'OPTIONS' && !req.path.includes('/health')) {
+    console.log(`🌐 ${req.method} ${req.path}`);
   }
   next();
 });
 
 // Routes
 app.get('/', (req, res) => {
-  console.log('🏠 Root endpoint accessed');
   res.json({
     message: 'Todo Task Management API',
     version: '1.0.0',

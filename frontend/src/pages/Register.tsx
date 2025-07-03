@@ -42,13 +42,20 @@ const passwordStrength = (password: string) => {
 };
 
 const Register: React.FC = () => {
-  const { register: registerUser, registerWithGoogle } = useAuth();
+  const { register: registerUser, registerWithGoogle, authInitialized, initializeAuthIfNeeded } = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+
+  // Initialize auth when user reaches register page
+  React.useEffect(() => {
+    if (!authInitialized) {
+      initializeAuthIfNeeded();
+    }
+  }, [authInitialized, initializeAuthIfNeeded]);
 
   const {
     register,

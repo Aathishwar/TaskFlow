@@ -12,9 +12,16 @@ import Register from './pages/Register';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated, isLoading, isUserSynced } = useAuth();
+  const { isAuthenticated, isLoading, isUserSynced, authInitialized, initializeAuthIfNeeded } = useAuth();
 
-  if (isLoading) {
+  // Initialize auth if not already done
+  React.useEffect(() => {
+    if (!authInitialized) {
+      initializeAuthIfNeeded();
+    }
+  }, [authInitialized, initializeAuthIfNeeded]);
+
+  if (!authInitialized || isLoading) {
     return (
       <Box minH="100vh" bg="gray.50" display="flex" alignItems="center" justifyContent="center">
         <VStack spacing={4}>
@@ -48,9 +55,16 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
 // Public Route Component (redirects to dashboard if already authenticated and synced)
 const PublicRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated, isLoading, isUserSynced } = useAuth();
+  const { isAuthenticated, isLoading, isUserSynced, authInitialized, initializeAuthIfNeeded } = useAuth();
 
-  if (isLoading) {
+  // Initialize auth if not already done (for returning users with stored tokens)
+  React.useEffect(() => {
+    if (!authInitialized) {
+      initializeAuthIfNeeded();
+    }
+  }, [authInitialized, initializeAuthIfNeeded]);
+
+  if (!authInitialized || isLoading) {
     return (
       <Box minH="100vh" bg="gray.50" display="flex" alignItems="center" justifyContent="center">
         <VStack spacing={4}>
@@ -71,22 +85,8 @@ const PublicRoute = ({ children }: { children: React.ReactNode }) => {
 };
 
 function App() {
-  const { isLoading } = useAuth(); // Removed unused 'isAuthenticated'
-
-  // Enable authentication for proper login flow
-  const skipAuth = false; // Set to true to skip authentication for development
-
-  // Reduced debug logging to prevent excessive console output
-  if (!skipAuth && isLoading) {
-    return (
-      <Box minH="100vh" bg="gray.50" display="flex" alignItems="center" justifyContent="center">
-        <VStack spacing={4}>
-          <LoadingSpinner />
-          <Text>Loading application...</Text>
-        </VStack>
-      </Box>
-    );
-  }
+  // With lazy authentication, we don't need to show loading on app start
+  // Authentication will only initialize when needed
 
   return (
     <>
