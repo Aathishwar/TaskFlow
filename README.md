@@ -9,13 +9,28 @@ A production-ready, multi-user task management application with real-time collab
 ✅ **Real-time Updates**: Live task updates via WebSocket connections  
 ✅ **Secure Authentication**: Firebase Authentication with JWT tokens  
 ✅ **Task Sharing**: Share tasks with other users via email  
+✅ **Notifications**: Smart reminders for tasks due soon  
+✅ **Profile Management**: Full user profile control with picture upload  
 ✅ **Production Ready**: Fully configured for deployment  
-✅ **Fixed Realtime Issues**: Resolved socket connection and time validation problems  
+✅ **Fixed Realtime Issues**: Resolved socket connection and time validation problems 
 
 ## 🚀 Production Deployment
 
-- **TaskFlow**: [Live App](https://astonishing-sfogliatella-579b6f.netlify.app/)
-- 
+- **Vercel**: [Live App](https://task-flow-frontend-azure.vercel.app/)
+- **Netlify**: [Live App](https://astonishing-sfogliatella-579b6f.netlify.app/)
+
+ ## Samples 
+ 
+<!-- Full-width Dashboard Image -->
+<img src="https://raw.githubusercontent.com/Aathishwar/TaskFlow/main/Samples/TaskFlow_Dashboard.png" alt="TaskFlow Dashboard" width="100%"/>
+
+<!-- 3 Images Side by Side -->
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Aathishwar/TaskFlow/main/Samples/TaskFlow_Intro.png" alt="TaskFlow Intro" width="32%" />
+  <img src="https://raw.githubusercontent.com/Aathishwar/TaskFlow/main/Samples/TaskFlow_Register.png" alt="TaskFlow Register" width="32%" />
+  <img src="https://raw.githubusercontent.com/Aathishwar/TaskFlow/main/Samples/TaskFlow_Login.png" alt="TaskFlow Login" width="32%"/>
+</p>
+
 ## 🎥 Multi-User Demo
 
 📹 **Test with Multiple Users:**
@@ -94,26 +109,38 @@ The application follows a modern microservices architecture:
 ## 🚀 Features
 
 ### Core Features
-- ✅ **User Authentication** - Firebase Authentication integration
-- ✅ **Task CRUD Operations** - Create, read, update, delete tasks
-- ✅ **Real-time Updates** - Live task updates without page refresh
-- ✅ **Task Sharing** - Share tasks with other users by email
-- ✅ **Responsive Design** - Works on desktop and mobile devices
+✅ **User Authentication**  
+✅ **Task CRUD Operations**  
+✅ **Real-time Updates**  
+✅ **Task Sharing**  
+✅ **Responsive Design**  
 
 ### Task Management
-- ✅ **Task Properties**: Title, description, status, priority, due date
-- ✅ **Task Status**: Pending, In Progress, Completed
-- ✅ **Priority Levels**: Low, Medium, High
-- ✅ **Due Date Tracking**: Visual indicators for overdue and due-soon tasks
-- ✅ **Task Filtering**: Filter by status, priority, and search terms
-- ✅ **Pagination**: Efficient loading of large task lists
+✅ Title, description, status, priority, due date  
+✅ Status: Pending, In Progress, Completed  
+✅ Priority: Low, Medium, High  
+✅ Due tracking with visual indicators  
+✅ Filter by status, priority, search terms  
+✅ Pagination support  
+
+### Notifications System
+⏰ Alerts 1 hour before due time  
+🎯 Only for incomplete tasks  
+🔄 Auto-sync across logged-in devices  
+💾 Persistent toggle in localStorage  
+🔔 Can be toggled in profile settings  
+✅ No server-side tracking, browser-only  
+
+### Profile Management
+👤 View & edit display name, bio, phone, location  
+🖼 Upload profile picture (Cloudinary or base64 fallback)  
+🗑 Secure account deletion with full data cleanup  
+📦 Settings saved and validated with error handling  
+✅ Responsive Chakra UI layout  
 
 ### User Experience
-- ✅ **Modern UI**: Clean, intuitive interface built with Chakra UI
-- ✅ **Real-time Notifications**: Toast notifications for user actions
-- ✅ **Error Handling**: Comprehensive error boundaries and validation
-- ✅ **Loading States**: Visual feedback during async operations
-- ✅ **Responsive Layout**: Optimized for all screen sizes
+✅ Modern UI, toast notifications, form validation, loading states, mobile responsive  
+
 
 ## 📁 Project Structure
 
@@ -140,8 +167,6 @@ Katomaran/
 │   │   └── theme/          # Chakra UI theme configuration
 │   ├── package.json
 │   └── vite.config.ts
-├── start-production.sh     # Production startup script (Linux/Mac)
-├── start-production.bat    # Production startup script (Windows)
 └── README.md              # This file
 ```
 
@@ -163,7 +188,7 @@ cd TaskFlow
 Create `.env` file in the root directory:
 ```env
 # Database Configuration
-MONGODB_URI=mongodb://localhost:27017/katomaran
+MONGODB_URI=mongodb://localhost:27017/TaskFlow
 
 # Server Configuration
 PORT=5000
@@ -182,8 +207,8 @@ FIREBASE_AUTH_PROVIDER_X509_CERT_URL=https://www.googleapis.com/oauth2/v1/certs
 FIREBASE_CLIENT_X509_CERT_URL=your-cert-url
 
 # Client URLs
-CLIENT_URL=http://localhost:3000
-FRONTEND_URL=http://localhost:3000
+CLIENT_URL=http://localhost:5000
+FRONTEND_URL=http://localhost:5173
 
 # JWT Configuration
 JWT_SECRET=your-super-secret-jwt-key-change-this-in-production

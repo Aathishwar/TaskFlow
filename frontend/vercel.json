@@ -1,24 +1,5 @@
 {
-  "builds": [
-    {
-      "src": "package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "dist"
-      }
-    }
-  ],
-  "routes": [
-    {
-      "src": "/(.*\\.(js|css|svg|png|jpg|jpeg|ico|json|wasm|txt|woff|woff2|ttf|eot|map))",
-      "headers": {
-        "cache-control": "public,max-age=31536000,immutable"
-      },
-      "continue": true
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
-    }
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/" }
   ]
 }
