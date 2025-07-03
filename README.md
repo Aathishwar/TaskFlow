@@ -19,6 +19,18 @@ A production-ready, multi-user task management application with real-time collab
 - **Vercel**: [Live App](https://task-flow-frontend-azure.vercel.app/)
 - **Netlify**: [Live App](https://astonishing-sfogliatella-579b6f.netlify.app/)
 
+ ## Samples 
+ 
+<!-- Full-width Dashboard Image -->
+<img src="https://raw.githubusercontent.com/Aathishwar/TaskFlow/main/Samples/TaskFlow_Dashboard.png" alt="TaskFlow Dashboard" width="100%"/>
+
+<!-- 3 Images Side by Side -->
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Aathishwar/TaskFlow/main/Samples/TaskFlow_Intro.png" alt="TaskFlow Intro" width="32%" />
+  <img src="https://raw.githubusercontent.com/Aathishwar/TaskFlow/main/Samples/TaskFlow_Register.png" alt="TaskFlow Register" width="32%" />
+  <img src="https://raw.githubusercontent.com/Aathishwar/TaskFlow/main/Samples/TaskFlow_Login.png" alt="TaskFlow Login" width="32%"/>
+</p>
+
 ## 🎥 Multi-User Demo
 
 📹 **Test with Multiple Users:**
@@ -176,7 +188,7 @@ cd TaskFlow
 Create `.env` file in the root directory:
 ```env
 # Database Configuration
-MONGODB_URI=mongodb://localhost:27017/katomaran
+MONGODB_URI=mongodb://localhost:27017/TaskFlow
 
 # Server Configuration
 PORT=5000
@@ -195,8 +207,8 @@ FIREBASE_AUTH_PROVIDER_X509_CERT_URL=https://www.googleapis.com/oauth2/v1/certs
 FIREBASE_CLIENT_X509_CERT_URL=your-cert-url
 
 # Client URLs
-CLIENT_URL=http://localhost:3000
-FRONTEND_URL=http://localhost:3000
+CLIENT_URL=http://localhost:5000
+FRONTEND_URL=http://localhost:5173
 
 # JWT Configuration
 JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
