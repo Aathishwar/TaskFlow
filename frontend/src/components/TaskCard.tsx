@@ -726,7 +726,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
           isOpen={isModalOpen}
           onClose={handleModalClose}
           users={currentTask.sharedWith!.map((user) => ({
-            id: user.id,
+            id: user._id || user.id,
             name: user.displayName,
             avatarUrl: user.profilePicture || '',
           }))}

@@ -609,11 +609,6 @@ router.post('/:id/share', validateShare, async (req: Request, res: Response) => 
 // @desc    Remove a user from a shared task
 // @access  Private (Owner only)
 router.delete('/:taskId/share/:userId', async (req: Request, res: Response) => {
-  console.log('🔥 REMOVE SHARED USER REQUEST RECEIVED');
-  console.log('📥 Task ID:', req.params.taskId);
-  console.log('📥 User ID to remove:', req.params.userId);
-  console.log('👤 Authenticated User ID:', (req.user as IUser)._id);
-
   try {
     if (handleDBError(res, 'DELETE /api/tasks/:taskId/share/:userId')) return;
 
@@ -627,7 +622,6 @@ router.delete('/:taskId/share/:userId', async (req: Request, res: Response) => {
     });
 
     if (!task) {
-      console.log('❌ Task not found or authenticated user is not the owner');
       res.status(404).json({
         success: false,
         message: 'Task not found or access denied'
@@ -639,7 +633,6 @@ router.delete('/:taskId/share/:userId', async (req: Request, res: Response) => {
     const userIndex = task.sharedWith.findIndex(sharedUserId => sharedUserId.toString() === userId);
 
     if (userIndex === -1) {
-      console.log('⚠️ User to remove not found in sharedWith list');
       res.status(404).json({
         success: false,
         message: 'User not found in shared list'
@@ -651,8 +644,6 @@ router.delete('/:taskId/share/:userId', async (req: Request, res: Response) => {
     task.sharedWith.splice(userIndex, 1);
     await task.save();
 
-    console.log('✅ User', userId, 'removed from task', taskId);
-
     // Populate the updated task before sending the response and emitting the socket event
     const updatedTask = await Task.findById(taskId)
       .populate('owner', 'displayName email profilePicture')
@@ -661,14 +652,10 @@ router.delete('/:taskId/share/:userId', async (req: Request, res: Response) => {
     // Emit socket event using helper function
     const io = (req as any).io;
     if (io && updatedTask) {
-      console.log('🔌 Emitting task_unshared event...');
       // Emit task_unshared event to the user who was removed
       emitTaskUnshared(io, updatedTask, [userId]);
-    } else {
-      console.log('⚠️ Socket.IO instance not found or task not updated for socket event');
     }
 
-    console.log('📤 Sending success response with updated task');
     res.json({
       success: true,
       message: 'User removed from shared list successfully',

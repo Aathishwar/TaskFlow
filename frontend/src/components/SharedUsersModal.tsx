@@ -52,7 +52,7 @@ const SharedUsersModal: React.FC<SharedUsersModalProps> = ({
           await onRemoveUser(userId);
         }
       } catch (error) {
-        console.error('Error removing users:', error);
+        // Error handled by parent component
       }
     }
     

@@ -167,7 +167,8 @@ async function handleStaticRequest(request) {
   try {
     const response = await fetch(request);
     
-    if (response.ok) {
+    // Only cache GET requests with successful responses
+    if (response.ok && request.method === 'GET') {
       const cache = await caches.open(DYNAMIC_CACHE);
       cache.put(request, response.clone());
     }

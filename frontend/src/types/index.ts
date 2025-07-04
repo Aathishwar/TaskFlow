@@ -1,6 +1,7 @@
 import { Socket } from 'socket.io-client';
 
 export interface User {
+  _id?: string;  // MongoDB ObjectId
   id: string;
   email: string;
   displayName: string;

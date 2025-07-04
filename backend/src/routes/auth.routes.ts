@@ -189,7 +189,7 @@ router.post('/firebase', authDeduplicationMiddleware, async (req: Request, res: 
       
       user = new User(newUserData);
       
-      console.log('💾 Firebase Auth: User object before saving:', user); // Added log
+      // console.log('💾 Firebase Auth: User object before saving:', user); // Added log
 
       try {
         await user.save();
@@ -568,12 +568,6 @@ router.put('/profile/picture',
         },
         { new: true, runValidators: true }
       );
-
-      console.log('✅ Database update result:', {
-        found: !!updatedUser,
-        newProfilePicture: updatedUser?.profilePicture?.substring(0, 100),
-        updatedAt: updatedUser?.updatedAt
-      });
 
       if (!updatedUser) {
         res.status(404).json({

@@ -105,7 +105,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       
       toast.success('Welcome back!');
     } catch (error: any) {
-      console.error('❌ Login error:', error);
+      // Log authentication errors for debugging without excessive console output
+      if (error.code !== 'auth/invalid-credential' && error.code !== 'auth/user-not-found') {
+        console.error('Login error:', error.code || error.message);
+      }
       
       // Preserve Firebase error codes for the UI to handle appropriately
       // Let Login component handle these with custom UI
