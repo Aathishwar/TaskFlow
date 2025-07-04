@@ -35,16 +35,6 @@ export const useTaskNotifications = ({
     return minutesDiff > 0 && minutesDiff <= minutes;
   }, []);
 
-  // Function to check if a task is overdue
-  const isTaskOverdue = useCallback((task: Task): boolean => {
-    if (!task.dueDate || task.status === 'completed') return false;
-    
-    const dueDate = new Date(task.dueDate);
-    const now = new Date();
-    
-    return now > dueDate;
-  }, []);
-
   // Function to get minutes until due
   const getMinutesUntilDue = useCallback((task: Task): number => {
     if (!task.dueDate) return 0;
@@ -74,7 +64,7 @@ export const useTaskNotifications = ({
         const minutesLeft = getMinutesUntilDue(task);
         notificationService.showTaskDueNotification(task, minutesLeft);
         currentState.dueNotificationSent = true;
-        console.log(`📨 Due notification sent for task: ${task.title} (${minutesLeft} minutes left)`);
+        // Due notification sent for task
       }
 
       // Reset notification flags if task is completed
@@ -94,7 +84,7 @@ export const useTaskNotifications = ({
         delete notificationStateRef.current[taskId];
       }
     });
-  }, [tasks, isEnabled, isTaskDueWithin, isTaskOverdue, getMinutesUntilDue]);
+  }, [tasks, isEnabled, isTaskDueWithin, getMinutesUntilDue]);
 
   // Request notification permission on first load
   useEffect(() => {
@@ -102,7 +92,7 @@ export const useTaskNotifications = ({
       if (isEnabled && notificationService.isSupported()) {
         const granted = await notificationService.requestPermission();
         if (granted) {
-          console.log('✅ Notification permission granted');
+          // Notification permission granted
         } else {
           console.warn('❌ Notification permission denied');
         }

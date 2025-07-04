@@ -364,11 +364,6 @@ const ProfilePage: React.FC = () => {
               <Heading size="lg" mb={2}>Profile Settings</Heading>
               <Text color={textColor}>
                 Manage your account information and preferences
-                {user?.googleId && (
-                  <Text as="span" fontSize="sm" color="blue.500" ml={2}>
-                    (Google Account)
-                  </Text>
-                )}
               </Text>
             </Box>
 

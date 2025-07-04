@@ -8,7 +8,8 @@ import {
   emitTaskCreated, 
   emitTaskUpdated, 
   emitTaskDeleted, 
-  emitTaskShared 
+  emitTaskShared,
+  emitTaskUnshared
 } from '../socket/socket';
 
 const router = Router();
@@ -194,7 +195,6 @@ const handleValidationErrors = (req: Request, res: Response): boolean => {
 // @access  Private
 router.post('/', validateTask, async (req: Request, res: Response) => {
   console.log('🔥 CREATE TASK REQUEST RECEIVED');
-  console.log('📥 Request body:', JSON.stringify(req.body, null, 2));
   console.log('👤 User from request:', req.user ? 'Present' : 'Missing');
   
   try {
@@ -206,15 +206,15 @@ router.post('/', validateTask, async (req: Request, res: Response) => {
     const { title, description, status, priority, dueDate, tags } = req.body;
     const userId = (req.user as IUser)._id;
     
-    console.log('📋 Creating task with data:', {
-      title,
-      description,
-      status: status || 'pending',
-      priority: priority || 'medium',
-      dueDate: dueDate ? new Date(dueDate) : undefined,
-      tags: tags || [],
-      owner: userId.toString()
-    });
+    // console.log('📋 Creating task with data:', {
+    //   title,
+    //   description,
+    //   status: status || 'pending',
+    //   priority: priority || 'medium',
+    //   dueDate: dueDate ? new Date(dueDate) : undefined,
+    //   tags: tags || [],
+    //   owner: userId.toString()
+    // });
 
     const task = await Task.create({
       title,
@@ -661,15 +661,9 @@ router.delete('/:taskId/share/:userId', async (req: Request, res: Response) => {
     // Emit socket event using helper function
     const io = (req as any).io;
     if (io && updatedTask) {
-      console.log('🔌 Emitting task_updated event...');
-      // Include the owner and remaining shared users in the recipients list
-      const recipients = [updatedTask.owner._id.toString(), ...updatedTask.sharedWith.map((user: any) => user._id.toString())];
-      emitTaskUpdated(io, updatedTask, recipients);
-
-      // Also emit a task_unshared event to the user who was removed
-      console.log('🔌 Emitting task_unshared event to user:', userId);
-      io.to(userId).emit('task_unshared', { taskId: updatedTask._id });
-
+      console.log('🔌 Emitting task_unshared event...');
+      // Emit task_unshared event to the user who was removed
+      emitTaskUnshared(io, updatedTask, [userId]);
     } else {
       console.log('⚠️ Socket.IO instance not found or task not updated for socket event');
     }

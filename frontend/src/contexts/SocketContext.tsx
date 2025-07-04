@@ -1,10 +1,16 @@
 import React, { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
+import { serverStatusNotification } from '../services/serverStatusNotificationService';
+
+export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'warming_up' | 'failed';
 
 interface SocketContextType {
   socket: Socket | null;
   isConnected: boolean;
+  connectionState: ConnectionState;
+  connectionAttempts: number;
+  isServerWarming: boolean;
   connect: () => void;
   disconnect: () => void;
 }
@@ -22,14 +28,18 @@ export const useSocket = () => {
 export const SocketProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
+  const [connectionAttempts, setConnectionAttempts] = useState(0);
+  const [isServerWarming, setIsServerWarming] = useState(false);
   const { firebaseUser, isAuthenticated, isUserSynced } = useAuth(); 
   const userIdRef = useRef<string | null>(null);
   const connectionInProgressRef = useRef(false);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const maxRetryAttempts = 10;
 
   const connect = async () => {
     if (!isAuthenticated || !firebaseUser || !isUserSynced) {
-      console.log('🔌 Cannot connect: User not authenticated or not synced');
+      setConnectionState('disconnected');
       return;
     }
     
@@ -37,124 +47,136 @@ export const SocketProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     
     // Prevent multiple simultaneous connection attempts
     if (connectionInProgressRef.current) {
-      console.log('🔌 Connection already in progress, skipping...');
       return;
     }
     
     if (userIdRef.current === currentUserId && socket && socket.connected) {
-      console.log('🔌 Already connected for this user');
+      setConnectionState('connected');
       return;
     }
     
     // Disconnect previous socket if user changed
-    if (socket) {
-      console.log('🔌 Disconnecting previous socket for user change');
+    if (userIdRef.current !== currentUserId && socket) {
       socket.disconnect();
       setSocket(null);
-      setIsConnected(false);
+      setConnectionState('disconnected');
     }
     
+    userIdRef.current = currentUserId;
+    connectionInProgressRef.current = true;
+    setConnectionState('connecting');
+    
     try {
-      connectionInProgressRef.current = true;
-      console.log('🔌 Starting new socket connection for user:', firebaseUser.email);
+      const token = await firebaseUser.getIdToken();
       
-      const idToken = await firebaseUser.getIdToken(true);
+      // Check if this might be a server warmup (no previous attempts or early attempts)
+      if (connectionAttempts < 3) {
+        setIsServerWarming(true);
+      }
+      
       const newSocket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000', {
-        auth: { token: idToken },
+        auth: { token },
         transports: ['websocket', 'polling'],
         timeout: 20000,
         forceNew: true,
-        reconnection: true,
-        reconnectionAttempts: 10,
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 5000
       });
-      
+
+      setSocket(newSocket);
+
       newSocket.on('connect', () => {
         setIsConnected(true);
-        userIdRef.current = currentUserId;
+        setConnectionState('connected');
+        setConnectionAttempts(0);
+        setIsServerWarming(false);
         connectionInProgressRef.current = false;
-        console.log('✅ Socket connected for user:', firebaseUser.email);
-        
-        // Clear any pending reconnect timeout
-        if (reconnectTimeoutRef.current) {
-          clearTimeout(reconnectTimeoutRef.current);
-          reconnectTimeoutRef.current = null;
-        }
-        
-        // Authenticate with the server
-        newSocket.emit('authenticate', {
-          userId: firebaseUser.uid,
-          email: firebaseUser.email
+
+        // Join user room for real-time updates
+        newSocket.emit('join_room', { userId: firebaseUser.uid }, () => {
+          // Joined room successfully
         });
       });
-      
-      newSocket.on('disconnect', (reason) => {
+
+      newSocket.on('connect_error', () => {
         setIsConnected(false);
+        setConnectionState('failed');
+        setConnectionAttempts(prev => prev + 1);
         connectionInProgressRef.current = false;
-        console.log('🔌 Socket disconnected:', reason);
-        
-        // Attempt to reconnect if it wasn't a manual disconnect
-        if (reason !== 'io client disconnect' && reason !== 'io server disconnect') {
-          console.log('🔄 Attempting to reconnect...');
-          reconnectTimeoutRef.current = setTimeout(() => {
+
+        // Only attempt to reconnect if we haven't exceeded max attempts
+        if (connectionAttempts < maxRetryAttempts) {
+          // Progressive delay: 2s, 4s, 8s, 16s, 32s
+          const delay = Math.min(2000 * Math.pow(2, connectionAttempts), 32000);
+          
+          setTimeout(() => {
             if (isAuthenticated && firebaseUser && isUserSynced) {
               connect();
             }
-          }, 2000);
+          }, delay);
+        } else {
+          setIsServerWarming(false);
         }
       });
-      
-      newSocket.on('connect_error', (error) => {
+
+      newSocket.on('disconnect', (reason) => {
         setIsConnected(false);
+        setConnectionState('disconnected');
         connectionInProgressRef.current = false;
-        console.error('❌ Socket connection error:', error);
+
+        // Don't attempt to reconnect if it was intentional
+        if (reason === 'io client disconnect') {
+          return;
+        }
+
+        // Only attempt to reconnect if we haven't exceeded max attempts
+        if (connectionAttempts < maxRetryAttempts) {
+          const delay = Math.min(2000 * Math.pow(2, connectionAttempts), 32000);
+          
+          setTimeout(() => {
+            if (isAuthenticated && firebaseUser && isUserSynced) {
+              setConnectionAttempts(prev => prev + 1);
+              connect();
+            }
+          }, delay);
+        } else {
+          setConnectionState('failed');
+          setIsServerWarming(false);
+        }
+      });
+
+    } catch (error) {
+      setIsConnected(false);
+      setConnectionState('failed');
+      setConnectionAttempts(prev => prev + 1);
+      connectionInProgressRef.current = false;
+
+      if (connectionAttempts < maxRetryAttempts) {
+        const delay = Math.min(2000 * Math.pow(2, connectionAttempts), 32000);
         
-        // Retry connection after delay
-        reconnectTimeoutRef.current = setTimeout(() => {
+        setTimeout(() => {
           if (isAuthenticated && firebaseUser && isUserSynced) {
             connect();
           }
-        }, 3000);
-      });
-      
-      newSocket.on('reconnect', (attemptNumber) => {
-        console.log('🔄 Socket reconnected after', attemptNumber, 'attempts');
-        setIsConnected(true);
-        connectionInProgressRef.current = false;
-      });
-      
-      newSocket.on('reconnect_error', (error) => {
-        console.error('❌ Socket reconnection error:', error);
-      });
-      
-      newSocket.on('reconnect_failed', () => {
-        console.error('❌ Socket reconnection failed after all attempts');
-        setIsConnected(false);
-        connectionInProgressRef.current = false;
-      });
-      
-      newSocket.on('joined_room', (data) => {
-        console.log('✅ Socket joined room:', data);
-      });
-      
-      setSocket(newSocket);
-    } catch (error) {
-      setIsConnected(false);
-      connectionInProgressRef.current = false;
-      console.error('❌ Error getting Firebase ID token or creating socket:', error);
+        }, delay);
+      } else {
+        setIsServerWarming(false);
+      }
     }
   };
 
   const disconnect = () => {
     if (socket) {
-      console.log('🔌 Manually disconnecting socket');
       socket.disconnect();
       setSocket(null);
       setIsConnected(false);
+      setConnectionState('disconnected');
       userIdRef.current = null;
       connectionInProgressRef.current = false;
     }
+    
+    // Reset state
+    setConnectionAttempts(0);
+    setIsServerWarming(false);
+    serverStatusNotification.reset();
     
     // Clear any pending reconnect timeout
     if (reconnectTimeoutRef.current) {
@@ -180,6 +202,9 @@ export const SocketProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const value = {
     socket,
     isConnected,
+    connectionState,
+    connectionAttempts,
+    isServerWarming,
     connect,
     disconnect
   };

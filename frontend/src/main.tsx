@@ -10,6 +10,19 @@ import ErrorFallback from './components/ErrorFallback'
 import 'react-toastify/dist/ReactToastify.css'
 import './config/firebase'; // Import firebase config to ensure initialization
 
+// Register service worker for PWA functionality and caching
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then(() => {
+        // Service worker registered successfully
+      })
+      .catch(() => {
+        // Service worker registration failed
+      });
+  });
+}
+
 const rootElement = document.getElementById('root');
 
 if (rootElement) {
@@ -22,7 +35,10 @@ if (rootElement) {
         }}
       >
         <ChakraProvider theme={theme}>
-          <BrowserRouter>
+          <BrowserRouter future={{ 
+            v7_startTransition: true,
+            v7_relativeSplatPath: true
+          }}>
             <AuthProvider>
               <SocketProvider>
                 <App />

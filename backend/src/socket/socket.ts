@@ -266,3 +266,34 @@ export const emitTaskShared = (io: Server, task: any, newRecipients: string[]) =
     console.error('❌ Error emitting task_shared event:', error);
   }
 };
+
+export const emitTaskUnshared = (io: Server, task: any, removedRecipients: string[]) => {
+  try {
+    const sanitizedTask = sanitizeTaskForEmission(task);
+    const eventData = {
+      taskId: task._id,
+      updatedTask: sanitizedTask,
+      timestamp: new Date().toISOString(),
+      event: 'task_unshared'
+    };
+    
+    // Emit to removed recipients
+    if (removedRecipients && removedRecipients.length > 0) {
+      console.log(`📤 Emitting task_unshared to removed recipients: ${removedRecipients.join(', ')}`);
+      emitToUsers(io, removedRecipients, 'task_unshared', eventData);
+    }
+    
+    // Also emit to task owner to update their view - handle both populated and unpopulated owner field
+    const ownerId = task.owner?.id || task.owner?._id || task.owner;
+    if (ownerId) {
+      console.log(`📤 Emitting task_updated to owner after unsharing: ${ownerId}`);
+      emitToUser(io, ownerId.toString(), 'task_updated', {
+        ...sanitizedTask,
+        timestamp: new Date().toISOString(),
+        event: 'task_updated'
+      });
+    }
+  } catch (error) {
+    console.error('❌ Error emitting task_unshared event:', error);
+  }
+};

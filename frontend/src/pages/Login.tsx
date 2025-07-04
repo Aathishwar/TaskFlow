@@ -11,6 +11,7 @@ import {
   FormLabel,
   FormErrorMessage,
   VStack,
+  HStack,
   Text,
   Divider,
   useToast,
@@ -84,21 +85,103 @@ const Login: React.FC = () => {
       if (error.code === 'auth/user-not-found') {
         toast({ 
           title: 'Account not found', 
-          description: 'No account exists with this email. Click here to create one instead.', 
+          description: 'No account exists with this email. Would you like to create one?', 
           status: 'warning', 
-          duration: 7000, 
-          isClosable: true
+          duration: 8000, 
+          isClosable: true,
+          render: ({ onClose }) => (
+            <Box
+              bg="orange.500"
+              color="white"
+              p={4}
+              borderRadius="md"
+              boxShadow="lg"
+            >
+              <VStack spacing={3} align="start">
+                <Text fontWeight="bold">Account not found</Text>
+                <Text fontSize="sm">
+                  This email isn't registered yet. Would you like to create a new account?
+                </Text>
+                <HStack spacing={2}>
+                  <Button
+                    size="sm"
+                    variant="solid"
+                    bg="white"
+                    color="orange.500"
+                    _hover={{ bg: "gray.100" }}
+                    onClick={() => {
+                      navigate('/register');
+                      onClose();
+                    }}
+                  >
+                    Create Account
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    color="white"
+                    _hover={{ bg: "whiteAlpha.200" }}
+                    onClick={onClose}
+                  >
+                    Cancel
+                  </Button>
+                </HStack>
+              </VStack>
+            </Box>
+          )
         });
-        // Small delay then show a follow-up toast with the action
-        setTimeout(() => {
-          toast({
-            title: '💡 Quick tip',
-            description: 'New to TaskFlow? Click "Sign Up" below to create your account.',
-            status: 'info',
-            duration: 5000,
-            isClosable: true
-          });
-        }, 1000);
+      } else if (error.code === 'auth/invalid-credential') {
+        // Handle invalid-credential with helpful guidance
+        toast({ 
+          title: 'Login failed', 
+          description: 'Invalid email or password. Please check your credentials.', 
+          status: 'error', 
+          duration: 6000, 
+          isClosable: true,
+          render: ({ onClose }) => (
+            <Box
+              bg="red.500"
+              color="white"
+              p={4}
+              borderRadius="md"
+              boxShadow="lg"
+            >
+              <VStack spacing={3} align="start">
+                <Text fontWeight="bold">Login failed</Text>
+                <Text fontSize="sm">
+                  Invalid email or password. Please check your credentials and try again.
+                </Text>
+                <Text fontSize="xs" opacity={0.8}>
+                  New to TaskFlow? You might need to create an account first.
+                </Text>
+                <HStack spacing={2}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    borderColor="white"
+                    color="white"
+                    _hover={{ bg: "whiteAlpha.200" }}
+                    onClick={() => {
+                      navigate('/register');
+                      onClose();
+                    }}
+                  >
+                    Create Account
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    color="white"
+                    _hover={{ bg: "whiteAlpha.200" }}
+                    onClick={onClose}
+                  >
+                    Try Again
+                  </Button>
+                </HStack>
+              </VStack>
+            </Box>
+          )
+        });
       } else {
         toast({ 
           title: 'Login failed', 

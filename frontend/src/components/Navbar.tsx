@@ -14,6 +14,7 @@ import {
 import { ChevronDownIcon, SettingsIcon } from '@chakra-ui/icons';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import ConnectionStatus from './ConnectionStatus';
 
 const Navbar = () => {
   const { user, logout } = useAuth();
@@ -36,6 +37,7 @@ const Navbar = () => {
 
         {/* User Menu */}
         <HStack spacing={4}>
+          <ConnectionStatus showMinimal />
           <Menu>
             <MenuButton
               as={Button}

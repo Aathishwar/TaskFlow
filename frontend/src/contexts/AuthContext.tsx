@@ -49,7 +49,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // Function to sync user with backend
   const syncUserWithBackend = async (firebaseUser: any) => {
     try {
-      console.log('🔄 Syncing user with backend...');
+      // Syncing user with backend
       
       return await retryOperation(async () => {
         const idToken = await firebaseUser.getIdToken();
@@ -76,7 +76,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           localStorage.setItem('token', backendToken);
           setIsUserSynced(true);
           
-          console.log('✅ User synced successfully:', syncedUser.email);
+          // User synced successfully
           return syncedUser;
         } else {
           throw new Error('Backend sync failed');
@@ -106,11 +106,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       toast.success('Welcome back!');
     } catch (error: any) {
       console.error('❌ Login error:', error);
+      
+      // Preserve Firebase error codes for the UI to handle appropriately
+      // Let Login component handle these with custom UI
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
+        throw error; // Let the Login component handle these
+      }
+      
       let errorMessage = 'Login failed';
       
-      if (error.code === 'auth/user-not-found') {
-        errorMessage = 'No account found with this email. Please register first.';
-      } else if (error.code === 'auth/wrong-password') {
+      if (error.code === 'auth/wrong-password') {
         errorMessage = 'Incorrect password';
       } else if (error.code === 'auth/too-many-requests') {
         errorMessage = 'Too many failed attempts. Please try again later';
@@ -183,7 +188,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // Clear any other cached data
       sessionStorage.clear();
       
-      console.log('👤 User logged out, all data cleared');
+      // User logged out, all data cleared
       toast.info('You have been logged out');
     } catch (error) {
       console.error('Logout failed:', error);
@@ -249,7 +254,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // Function to manually initialize auth when needed
   const initializeAuthIfNeeded = () => {
     if (!authInitialized && !loading) {
-      console.log('🔄 Manually initializing auth...');
+      // Manually initializing auth
       setLoading(true);
       
       const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -298,12 +303,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // Function to update user data in context
   const updateUser = (userData: Partial<User>) => {
-    console.log('🔄 updateUser called with:', userData);
-    console.log('🔄 Current user before update:', user);
+    // updateUser called with new data
     
     if (user) {
       const updatedUser = { ...user, ...userData };
-      console.log('🔄 Setting updated user:', updatedUser);
+      // Setting updated user
       setUser(updatedUser);
       
       // Also update localStorage to persist the change
@@ -313,7 +317,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setSkipNextSync(true);
       setTimeout(() => setSkipNextSync(false), 2000); // Reset after 2 seconds
     } else {
-      console.log('❌ updateUser called but user is null');
+      // updateUser called but user is null
     }
   };
 
@@ -327,12 +331,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const storedToken = localStorage.getItem('token');
     
     if (storedToken) {
-      console.log('🔄 Found stored token, initializing auth...');
+      // Found stored token, initializing auth
       setToken(storedToken);
       setLoading(true);
       initializeAuth();
     } else {
-      console.log('👤 No stored token, skipping auth initialization for faster load');
+      // No stored token, skipping auth initialization
       setAuthInitialized(true);
     }
     
@@ -371,7 +375,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 console.warn('⚠️ User is signed in to Firebase but not synced with backend');
               }
             } else {
-              console.log('🚫 Skipping Firebase sync due to recent manual update');
+              // Skipping Firebase sync due to recent manual update
             }
           } catch (error) {
             console.error('❌ Error in auth state change handler:', error);
@@ -382,7 +386,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             localStorage.removeItem('token');
           }
         } else {
-          console.log('👤 User logged out, clearing user data...');
+          // User logged out, clearing user data
           setUser(null);
           setToken(null); // Clear token state on logout
           setIsUserSynced(false);

@@ -74,10 +74,19 @@ const TaskSchema: Schema = new Schema({
 });
 
 // Indexes for better query performance
-TaskSchema.index({ owner: 1, status: 1 });
-TaskSchema.index({ sharedWith: 1 });
-TaskSchema.index({ createdAt: -1 });
-TaskSchema.index({ dueDate: 1 });
+TaskSchema.index({ owner: 1, status: 1 }); // Most common query pattern
+TaskSchema.index({ owner: 1, createdAt: -1 }); // For pagination with sorting
+TaskSchema.index({ sharedWith: 1, status: 1 }); // For shared tasks filtering
+TaskSchema.index({ createdAt: -1 }); // For general sorting
+TaskSchema.index({ dueDate: 1, status: 1 }); // For due date queries
+TaskSchema.index({ owner: 1, priority: 1 }); // For priority filtering
+TaskSchema.index({ 
+  title: 'text', 
+  description: 'text' 
+}, {
+  weights: { title: 10, description: 5 }, // Title is more important for search
+  name: 'task_text_index'
+}); // For text search
 
 // Virtual for checking if task is overdue
 TaskSchema.virtual('isOverdue').get(function() {

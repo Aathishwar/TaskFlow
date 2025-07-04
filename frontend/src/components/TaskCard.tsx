@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, memo, useMemo } from 'react';
 import {
   Card,
   CardBody,
@@ -35,6 +35,7 @@ interface TaskCardProps {
   onShare: (task: Task) => void;
   onStatusChange: (taskId: string, status: Task['status']) => void;
   onTaskUpdate: (updatedTask: Task) => void;
+  isFromSharedTab?: boolean; // Add this prop to indicate if task is from shared tab
 }
 
 const TaskCard: React.FC<TaskCardProps> = ({
@@ -45,20 +46,63 @@ const TaskCard: React.FC<TaskCardProps> = ({
   onShare,
   onStatusChange,
   onTaskUpdate,
+  isFromSharedTab = false, // Default to false
 }) => {
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [pendingUpdates, setPendingUpdates] = useState<Task | null>(null);
+  const [isRemovingUser, setIsRemovingUser] = useState<string | null>(null); // Track which user is being removed
 
   // Use pending updates if available, otherwise use current task
   const currentTask = pendingUpdates || task;
   
-  // Check ownership - ALWAYS use the original task for ownership check
-  const isOwner = task.owner?.id === currentUserId;
+  // Enhanced ownership check - prioritize tab context over data inconsistencies
+  const isOwner = useMemo(() => {
+    // CRITICAL: If we're in the shared tab, the current user is definitely NOT the owner
+    if (isFromSharedTab) {
+      return false;
+    }
+    
+    // Check if current user is the owner using multiple possible ID formats
+    const ownerId = currentTask.owner?.id || (currentTask.owner as any)?._id || (typeof currentTask.owner === 'string' ? currentTask.owner : null);
+    
+    if (ownerId === currentUserId) {
+      return true;
+    }
+    
+    // If we don't have owner data yet, assume they're the owner if we're NOT in shared tab
+    if (!ownerId && !isFromSharedTab) {
+      return true;
+    }
+
+    // Additional check: if the task is in the "owned tasks" array and has sharedWith users,
+    // then the current user is likely the owner even if ownership data is inconsistent
+    if (currentTask.sharedWith && currentTask.sharedWith.length > 0 && !isFromSharedTab) {
+      // Check if current user is NOT in the sharedWith array - if not, they're likely the owner
+      const isInSharedWith = currentTask.sharedWith.some(user => 
+        user.id === currentUserId || (user as any)._id === currentUserId
+      );
+      
+      // If user is not in sharedWith but the task has sharedWith users, user is likely the owner
+      if (!isInSharedWith) {
+        return true;
+      }
+    }
+    
+    return false;
+  }, [currentTask.owner, currentTask.sharedWith, currentUserId, isFromSharedTab]);
   
-  // Simple check: show shared info if there are shared users
+  // Only show shared info if there are shared users AND ownership is clearly determined
   const hasSharedUsers = currentTask.sharedWith && currentTask.sharedWith.length > 0;
+  
+  // Additional check: only show shared section if we have proper owner data OR we're explicitly in shared tab
+  const shouldShowSharedSection = hasSharedUsers && (
+    // We have a proper owner object with ID
+    (currentTask.owner && (currentTask.owner.id || (currentTask.owner as any)._id)) ||
+    // Or we're explicitly in the shared tab (where we know the current user is NOT the owner)
+    isFromSharedTab
+  );
 
   // Use the animated deletion hook
   const deletionState = useAnimatedDeletion(
@@ -117,14 +161,43 @@ const TaskCard: React.FC<TaskCardProps> = ({
   };
 
   const handleRemoveSharedUser = async (userId: string) => {
+    // Prevent multiple simultaneous removal requests
+    if (isRemovingUser) {
+      return;
+    }
+
+    setIsRemovingUser(userId);
+    
     try {
-      // Call the service function to remove the user
-      const updatedTask = await taskService.removeUserFromTask(task._id, userId);
+      // Use currentTask._id which includes any pending updates
+      const updatedTask = await taskService.removeUserFromTask(currentTask._id, userId);
+      
       // Store the update instead of applying immediately
       setPendingUpdates(updatedTask);
-    } catch (error) {
-      console.error('Error removing user from task:', error);
-      // Handle error (e.g., show a toast notification)
+    } catch (error: any) {
+      // If it's a 404 error, the task might not be synchronized yet
+      if (error.response?.status === 404) {
+        try {
+          // Wait a bit and retry with current task ID
+          await new Promise(resolve => setTimeout(resolve, 800));
+          const updatedTask = await taskService.removeUserFromTask(currentTask._id, userId);
+          setPendingUpdates(updatedTask);
+        } catch (delayError) {
+          try {
+            // Try with the original task ID
+            const updatedTask = await taskService.removeUserFromTask(task._id, userId);
+            setPendingUpdates(updatedTask);
+          } catch (fallbackError: any) {
+            // All recovery strategies failed - could show user notification here
+            throw fallbackError;
+          }
+        }
+      } else {
+        throw error;
+      }
+    } finally {
+      // Always clear the loading state
+      setIsRemovingUser(null);
     }
   };
 
@@ -482,7 +555,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
             )}
 
             {/* Shared Users (at the very bottom) */}
-            {hasSharedUsers && (
+            {shouldShowSharedSection && (
               <HStack spacing={2} mt={2} align="center">
                 <Text fontSize="sm" color={useColorModeValue('gray.500', 'gray.400')}>
                   {isOwner ? 'Shared with:' : 'Shared with you by:'}
@@ -665,4 +738,19 @@ const TaskCard: React.FC<TaskCardProps> = ({
   );
 };
 
-export default TaskCard;
+// Memoize the component to prevent unnecessary re-renders
+export default memo(TaskCard, (prevProps, nextProps) => {
+  // Only re-render if task data, currentUserId, or key handlers change
+  return (
+    prevProps.task._id === nextProps.task._id &&
+    prevProps.task.title === nextProps.task.title &&
+    prevProps.task.status === nextProps.task.status &&
+    prevProps.task.priority === nextProps.task.priority &&
+    prevProps.task.dueDate === nextProps.task.dueDate &&
+    prevProps.task.updatedAt === nextProps.task.updatedAt &&
+    JSON.stringify(prevProps.task.sharedWith) === JSON.stringify(nextProps.task.sharedWith) &&
+    JSON.stringify(prevProps.task.owner) === JSON.stringify(nextProps.task.owner) &&
+    prevProps.currentUserId === nextProps.currentUserId &&
+    prevProps.isFromSharedTab === nextProps.isFromSharedTab
+  );
+});

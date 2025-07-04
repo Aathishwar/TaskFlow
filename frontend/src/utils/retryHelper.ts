@@ -24,23 +24,23 @@ export async function retryOperation<T>(
     try {
       const result = await operation();
       if (attempt > 1) {
-        console.log(`✅ Operation succeeded on attempt ${attempt}`);
+        // Operation succeeded
       }
       return result;
     } catch (error: any) {
       lastError = error;
-      console.log(`❌ Attempt ${attempt}/${opts.maxAttempts} failed:`, error.message);
+      // Retry attempt failed
 
       // Don't retry certain errors
       if (shouldNotRetry(error)) {
-        console.log('🚫 Error type should not be retried');
+        // Error type should not be retried
         throw error;
       }
 
-      // If this was the last attempt, throw the error
+      // If this was the last attempt, throw the original error to preserve Firebase error codes
       if (attempt === opts.maxAttempts) {
-        console.log('🔄 All retry attempts exhausted');
-        throw new Error('Authentication failed. Please try again later.');
+        // All retry attempts exhausted
+        throw error; // Preserve original error instead of creating generic one
       }
 
       // Calculate delay with exponential backoff
@@ -49,7 +49,7 @@ export async function retryOperation<T>(
         opts.maxDelay
       );
 
-      console.log(`⏳ Waiting ${delay}ms before retry attempt ${attempt + 1}`);
+      // Waiting before retry
       await sleep(delay);
     }
   }
@@ -62,6 +62,7 @@ function shouldNotRetry(error: any): boolean {
   const nonRetryableErrors = [
     'auth/user-not-found',
     'auth/wrong-password',
+    'auth/invalid-credential', // Don't retry - let it be handled properly
     'auth/email-already-in-use',
     'auth/weak-password',
     'auth/invalid-email',

@@ -48,12 +48,12 @@ const TaskFilters: React.FC<TaskFiltersProps> = ({ filters, onFiltersChange, tas
     
     // Don't make API call if search term hasn't actually changed
     if (searchTerm === lastSearchTerm) {
-      console.log('Search skipped - term unchanged:', searchTerm);
+      // Search skipped - term unchanged
       setIsSearching(false);
       return;
     }
 
-    console.log('Scheduling search for:', searchTerm, 'with delay:', delay);
+    // Scheduling search with delay
     searchTimeoutRef.current = setTimeout(() => {
       try {
         const newFilters = { ...filters };
@@ -65,7 +65,7 @@ const TaskFilters: React.FC<TaskFiltersProps> = ({ filters, onFiltersChange, tas
         }
         
         setLastSearchTerm(searchTerm);
-        console.log('Executing search with filters:', newFilters);
+        // Executing search with filters
         onFiltersChange(newFilters);
         setIsSearching(false);
         searchTimeoutRef.current = null;
@@ -84,12 +84,12 @@ const TaskFilters: React.FC<TaskFiltersProps> = ({ filters, onFiltersChange, tas
       const isDeleting = value.length < previousLength;
       const isDeletingMultiple = previousLength - value.length > 1; // Detect bulk deletions (ctrl+backspace, select+delete)
       
-      console.log('Search change:', { value, previousLength, isDeleting, isDeletingMultiple });
+      // Search change detected
       setSearchValue(value);
       
       // Don't trigger search if deletion is in progress
       if (isDeletionInProgress) {
-        console.log('Search blocked - deletion in progress');
+        // Search blocked - deletion in progress
         return;
       }
       
@@ -100,7 +100,7 @@ const TaskFilters: React.FC<TaskFiltersProps> = ({ filters, onFiltersChange, tas
         const newFilters = { ...filters };
         delete newFilters.search;
         setLastSearchTerm('');
-        console.log('Search cleared immediately');
+        // Search cleared immediately
         onFiltersChange(newFilters);
         return;
       }
@@ -112,7 +112,7 @@ const TaskFilters: React.FC<TaskFiltersProps> = ({ filters, onFiltersChange, tas
         const newFilters = { ...filters };
         newFilters.search = value;
         setLastSearchTerm(value);
-        console.log('Bulk deletion search applied immediately:', value);
+        // Bulk deletion search applied immediately
         onFiltersChange(newFilters);
         return;
       }

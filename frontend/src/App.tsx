@@ -1,14 +1,23 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Box, Text, VStack } from '@chakra-ui/react';
 import { useAuth } from './contexts/AuthContext';
 import Login from './pages/Login';
-import DashboardPage from './pages/DashboardPage';
-import ProfilePage from './pages/ProfilePage';
 import Home from './pages/Home';
 import LoadingSpinner from './components/LoadingSpinner';
 import ModeChanger from './components/ModeChanger';
 import Register from './pages/Register';
+import { LazyDashboardPage, LazyProfilePage, preloadDashboard, preloadProfile } from './utils/lazyComponents';
+
+// Fallback component for lazy loading
+const LazyFallback = () => (
+  <Box minH="100vh" bg="gray.50" display="flex" alignItems="center" justifyContent="center">
+    <VStack spacing={4}>
+      <LoadingSpinner />
+      <Text>Loading...</Text>
+    </VStack>
+  </Box>
+);
 
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -85,8 +94,16 @@ const PublicRoute = ({ children }: { children: React.ReactNode }) => {
 };
 
 function App() {
-  // With lazy authentication, we don't need to show loading on app start
-  // Authentication will only initialize when needed
+  // Preload components on app start for faster navigation
+  React.useEffect(() => {
+    // Preload dashboard for authenticated users
+    const timer = setTimeout(() => {
+      preloadDashboard();
+      preloadProfile();
+    }, 2000); // Preload after 2 seconds
+    
+    return () => clearTimeout(timer);
+  }, []);
 
   return (
     <>
@@ -112,7 +129,9 @@ function App() {
           path="/dashboard" 
           element={
             <ProtectedRoute>
-              <DashboardPage />
+              <Suspense fallback={<LazyFallback />}>
+                <LazyDashboardPage />
+              </Suspense>
             </ProtectedRoute>
           } 
         />
@@ -120,7 +139,9 @@ function App() {
           path="/profile" 
           element={
             <ProtectedRoute>
-              <ProfilePage />
+              <Suspense fallback={<LazyFallback />}>
+                <LazyProfilePage />
+              </Suspense>
             </ProtectedRoute>
           } 
         />

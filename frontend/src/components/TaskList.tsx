@@ -186,6 +186,7 @@ const TaskList: React.FC<TaskListProps> = ({
                   onShare={onShare}
                   onStatusChange={onStatusChange}
                   onTaskUpdate={onTaskUpdate} // Pass onTaskUpdate down
+                  isFromSharedTab={showSharedTasks} // Pass the tab context
                 />
               </motion.div>
             ))}
@@ -196,4 +197,4 @@ const TaskList: React.FC<TaskListProps> = ({
   );
 };
 
-export default TaskList;
+export default React.memo(TaskList);

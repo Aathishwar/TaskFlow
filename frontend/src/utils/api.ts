@@ -5,14 +5,15 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 // Create axios instance with better timeout and error handling
 const api = axios.create({
   baseURL: `${API_URL}/api`,
-  timeout: 15000, // Increased timeout for slower connections
+  timeout: 30000, // Increased timeout for server warmup scenarios
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// Simple request deduplication to prevent identical simultaneous requests
+// Enhanced request deduplication to prevent identical simultaneous requests
 const activeRequests = new Map(); // Track active requests with timestamps
+const requestCompletionPromises = new Map(); // Track ongoing requests
 
 // Request interceptor to add auth token and prevent duplicate requests
 api.interceptors.request.use(
@@ -23,7 +24,7 @@ api.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`;
     }
     
-    // Improved deduplication for GET requests only
+    // Enhanced deduplication for GET requests only
     if (config.method === 'get') {
       const requestKey = `${config.method}:${config.url}:${JSON.stringify(config.params)}`;
       const now = Date.now();
@@ -32,13 +33,19 @@ api.interceptors.request.use(
       for (const [key, timestamp] of activeRequests.entries()) {
         if (now - timestamp > 30000) {
           activeRequests.delete(key);
+          requestCompletionPromises.delete(key);
         }
       }
       
-      // Only block if the exact same request is very recent (within 1 second)
+      // Check if exact same request is already in progress
       const existingTimestamp = activeRequests.get(requestKey);
-      if (existingTimestamp && (now - existingTimestamp < 1000)) {
-        return Promise.reject(new Error('Duplicate request blocked'));
+      if (existingTimestamp && (now - existingTimestamp < 5000)) { // Increased to 5 seconds
+        // Return the existing promise instead of blocking
+        const existingPromise = requestCompletionPromises.get(requestKey);
+        if (existingPromise) {
+          // Reusing existing request
+          return existingPromise;
+        }
       }
       
       // Mark request as active with timestamp
@@ -60,23 +67,29 @@ api.interceptors.response.use(
   (response) => {
     // Clean up active request tracking
     const requestKey = (response.config as any).requestKey;
-    if (requestKey && activeRequests.has(requestKey)) {
+    if (requestKey) {
       activeRequests.delete(requestKey);
+      requestCompletionPromises.delete(requestKey);
     }
     return response;
   },
   (error) => {
     // Clean up active request tracking on error
     const requestKey = (error.config as any)?.requestKey;
-    if (requestKey && activeRequests.has(requestKey)) {
+    if (requestKey) {
       activeRequests.delete(requestKey);
+      requestCompletionPromises.delete(requestKey);
     }
     
-    // Handle network errors gracefully
+    // Enhanced error handling for server warmup scenarios
     if (error.code === 'ECONNABORTED') {
-      error.message = 'Request timed out. Please check your connection.';
-    } else if (error.code === 'ERR_NETWORK') {
-      error.message = 'Unable to connect to server. Please try again.';
+      if (error.config?.timeout && error.config.timeout >= 20000) {
+        error.message = 'Server is starting up, please wait a moment and try again.';
+      } else {
+        error.message = 'Request timed out. Please check your connection.';
+      }
+    } else if (error.code === 'ERR_NETWORK' || error.code === 'ECONNREFUSED') {
+      error.message = 'Server is currently starting up. Please wait a moment and try again.';
     } else if (error.message === 'Duplicate request blocked') {
       // Silently ignore duplicate requests
       return Promise.reject(error);
@@ -94,6 +107,10 @@ api.interceptors.response.use(
     // Handle server errors gracefully
     if (error.response?.status >= 500) {
       error.message = 'Server is experiencing issues. Please try again later.';
+    } else if (error.response?.status === 503) {
+      error.message = 'Server is temporarily unavailable. It may be starting up.';
+    } else if (error.response?.status === 502 || error.response?.status === 504) {
+      error.message = 'Server is starting up. Please wait a moment and try again.';
     }
     
     return Promise.reject(error);

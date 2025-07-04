@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Box,
   Container,
@@ -14,6 +14,7 @@ import {
   TabList,
   TabPanel,
   TabPanels,
+  Badge,
   useColorModeValue,
 } from '@chakra-ui/react';
 import { AddIcon } from '@chakra-ui/icons';
@@ -24,11 +25,14 @@ import TaskModal from '../components/TaskModal';
 import ShareModal from '../components/ShareModal';
 import TaskFilters from '../components/TaskFilters';
 import LoadingSpinner from '../components/LoadingSpinner';
+import ConnectionStatus from '../components/ConnectionStatus';
 import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import { taskService } from '../services/taskService';
+import { serverStatusNotification } from '../services/serverStatusNotificationService';
 import { Task, TaskFilters as TaskFiltersType, CreateTaskData, UpdateTaskData } from '../types';
 import { useTaskNotifications } from '../hooks/useTaskNotifications';
+import { useOptimizedTabChange } from '../hooks/useOptimizedTabChange';
 
 // Tab configuration with colors matching the design
 const tabConfig = [
@@ -92,7 +96,7 @@ const DashboardPage: React.FC = () => {
   const [filters, setFilters] = useState<TaskFiltersType>({});
   const [selectedTask, setSelectedTask] = useState<Task | undefined>(undefined);
   const [activeTab, setActiveTab] = useState(0);
-  const [filteredTasks, setFilteredTasks] = useState<Task[]>([]);
+  // filteredTasks is now calculated via useMemo - no state needed
   const [loadError, setLoadError] = useState<string | null>(null);
   const [unsharedTaskIdsPendingUpdate, setUnsharedTaskIdsPendingUpdate] = useState<string[]>([]); // New state for pending updates
   const [notificationsEnabled] = useState<boolean>(
@@ -107,9 +111,14 @@ const DashboardPage: React.FC = () => {
   const { isOpen: isShareModalOpen, onOpen: onShareModalOpen, onClose: onShareModalClose } = useDisclosure(); // isShareModalOpen state is already available
 
   // Hooks
-  const { socket, isConnected } = useSocket();
+  const { socket, isConnected, connectionState } = useSocket();
   const { user } = useAuth();
   const toast = useToast();
+
+  // Initialize server status notification service
+  React.useEffect(() => {
+    serverStatusNotification.initialize(toast);
+  }, [toast]);
 
   // Combine all tasks for notifications (both owned and shared)
   const allTasks = [...tasks, ...sharedTasks];
@@ -187,73 +196,38 @@ const DashboardPage: React.FC = () => {
     return filtered;
   }, [user?.id]); // Add user?.id as dependency
 
-  // Function to handle task updates (used by socket and TaskCard)
-  const handleTaskUpdated = useCallback((updatedTask: Task) => {
-    console.log('✏️ DashboardPage: Task updated via Socket.IO:', updatedTask.title, updatedTask._id, 'Owner:', updatedTask.owner, 'SharedWith:', updatedTask.sharedWith.map(u => u.displayName)); // Added logs
-
-    let newOwnedTasks = tasks;
-    let newSharedTasks = sharedTasks;
-
-    // Update owned tasks if the task exists there
-    const ownedTaskIndex = tasks.findIndex(task => task._id === updatedTask._id);
-    if (ownedTaskIndex !== -1) {
-      console.log('✅ DashboardPage: Updating task in owned tasks state');
-      newOwnedTasks = tasks.map(task =>
-        task._id === updatedTask._id ? updatedTask : task
-      );
-      setTasks(newOwnedTasks);
-    }
-
-    // Update shared tasks if the task exists there
-    const sharedTaskIndex = sharedTasks.findIndex(task => task._id === updatedTask._id);
-    if (sharedTaskIndex !== -1) {
-       console.log('✅ DashboardPage: Updating task in shared tasks state');
-       newSharedTasks = sharedTasks.map(task =>
-        task._id === updatedTask._id ? updatedTask : task
-      );
-      setSharedTasks(newSharedTasks);
-    }
-
-    // Re-filter tasks immediately after state update
-    // The useEffect below handles the filtering based on the updated state.
-    // No need to manually call setFilteredTasks here.
-
-  }, [tasks, sharedTasks]); // Keep dependencies, removed activeTab, filters, filterTasksByTab as useEffect handles this
-
-  // Update filtered tasks when tasks, sharedTasks, active tab, or filters change
-  // This useEffect is now less critical for immediate updates but still useful for initial load and filter changes
-  useEffect(() => {
-    console.log('🔄 DashboardPage: Running filtering effect...');
+  // Memoized filtered tasks - only recalculates when dependencies change
+  const filteredTasks = useMemo(() => {
     const currentTabValue = tabConfig[activeTab].value;
     const baseTasks = currentTabValue === 'shared' ? sharedTasks : tasks;
     const filtered = filterTasksByTab(baseTasks, currentTabValue, filters);
-    setFilteredTasks(filtered);
-    console.log('✅ DashboardPage: Filtering effect complete:', { filteredCount: filtered.length, activeTab: currentTabValue });
-  }, [tasks, sharedTasks, activeTab, filters, filterTasksByTab]); // Keep dependencies
+    return filtered;
+  }, [tasks, sharedTasks, activeTab, filters, filterTasksByTab]);
 
-  // Handle filter changes from the filter bar
+  // Handle filter changes from the filter bar - LOCAL FILTERING ONLY
   const handleFiltersChange = (newFilters: TaskFiltersType) => {
     setFilters(newFilters);
-    setCurrentPage(1); // Reset to first page when filters change
-    loadTasks(1, newFilters); // Only reload tasks
+    setCurrentPage(1);
   };
 
-  // Clean function to load tasks with better error handling
-  const loadTasks = async (page: number = 1, currentFilters: TaskFiltersType = {}, retryCount: number = 0) => {
+  // Clean function to load tasks with better error handling - NO SERVER-SIDE FILTERING
+  const loadTasks = async (page: number = 1, _unusedFilters: TaskFiltersType = {}, retryCount: number = 0) => {
     if (!user) {
-      console.log('ℹ️ Skipping task load: User not available.');
       return;
     }
 
-    console.log('🔄 Loading tasks for user:', user.email, 'with filters:', currentFilters, 'page:', page);
+    // Wait for socket connection before loading tasks (or if connection failed, proceed anyway)
+    if (connectionState !== 'connected' && connectionState !== 'failed') {
+      return;
+    }
 
     try {
       setLoading(true);
       setLoadError(null);
       
       const [ownedResponse, sharedResponse] = await Promise.all([
-        taskService.getTasks({ page, limit: 10, ...currentFilters }),
-        taskService.getSharedTasks?.({ page, limit: 10, ...currentFilters }) || Promise.resolve({ 
+        taskService.getTasks({ page, limit: 10 }),
+        taskService.getSharedTasks?.({ page, limit: 10 }) || Promise.resolve({ 
           tasks: [], 
           pagination: { currentPage: 1, totalPages: 1, totalTasks: 0, hasNextPage: false, hasPrevPage: false }
         })
@@ -263,23 +237,17 @@ const DashboardPage: React.FC = () => {
         throw new Error('Invalid response structure from server');
       }
 
-      // Only update tasks and sharedTasks states
       setTasks(ownedResponse.tasks);
       setSharedTasks(sharedResponse?.tasks || []);
       setCurrentPage(ownedResponse.pagination.currentPage);
       setTotalPages(ownedResponse.pagination.totalPages);
 
-      console.log('✅ Tasks loaded successfully:', ownedResponse.tasks.length, 'owned tasks,', sharedResponse?.tasks?.length || 0, 'shared tasks');
     } catch (error: any) {
-      console.error('❌ Error loading tasks:', error);
-      
-      // Skip error handling for duplicate requests (they're internal optimization)
+      // Skip error handling for duplicate requests
       if (error.message === 'Duplicate request blocked') {
-        console.log('ℹ️ Duplicate request was blocked - this is normal');
         return;
       }
 
-      // Determine error message based on error type
       let errorMessage = 'Failed to load tasks';
       if (error.code === 'ECONNABORTED') {
         errorMessage = 'Request timed out. Please check your connection.';
@@ -297,14 +265,12 @@ const DashboardPage: React.FC = () => {
       
       // Retry logic for network errors (up to 2 retries)
       if (retryCount < 2 && (error.code === 'ECONNABORTED' || error.code === 'ERR_NETWORK')) {
-        console.log(`🔄 Retrying task load in 2 seconds... (${retryCount + 1}/2)`);
         setTimeout(() => {
-          loadTasks(page, currentFilters, retryCount + 1);
+          loadTasks(page, {}, retryCount + 1);
         }, 2000);
         return;
       }
       
-      // Set error state for UI display
       setLoadError(errorMessage);
       
       toast({
@@ -321,170 +287,192 @@ const DashboardPage: React.FC = () => {
 
   // Handle user changes - clear tasks when user changes and reset initial load ref
   useEffect(() => {
-    if (user?.id) { // Trigger only when user ID becomes available
-      console.log('👤 User ID available, preparing for initial task load...');
+    if (user?.id) {
       setTasks([]);
       setSharedTasks([]);
-      setFilteredTasks([]);
       setCurrentPage(1);
       setLoadError(null);
-      // Ensure initial load ref is false for this user
       initialLoadDoneRef.current[user.id] = false;
-      
-      // Trigger the initial load
-      loadTasks(1, {});
     } else {
-        // Clear tasks and reset when user logs out
-        console.log('👤 User logged out, clearing tasks.');
-        setTasks([]);
-        setSharedTasks([]);
-        setFilteredTasks([]);
-        setCurrentPage(1);
-        setLoadError(null);
-        // Clear all initial load flags
-        initialLoadDoneRef.current = {};
+      setTasks([]);
+      setSharedTasks([]);
+      setCurrentPage(1);
+      setLoadError(null);
+      initialLoadDoneRef.current = {};
     }
-  }, [user?.id]); // Only trigger when user ID changes
+  }, [user?.id]);
 
-  // Load tasks when filters or active tab change
+  // Wait for socket connection before initial task load with timeout fallback
   useEffect(() => {
-    if (user?.id) {
-      console.log('🔄 Loading tasks due to filter or tab change for user:', user.email);
-      loadTasks(1, filters);
+    if (user?.id && connectionState === 'connected' && !initialLoadDoneRef.current[user.id]) {
+      initialLoadDoneRef.current[user.id] = true;
+      loadTasks(1, {});
+    } else if (user?.id && connectionState === 'failed' && !initialLoadDoneRef.current[user.id]) {
+      initialLoadDoneRef.current[user.id] = true;
+      loadTasks(1, {});
+    } else if (user?.id && connectionState === 'connecting' && !initialLoadDoneRef.current[user.id]) {
+      const fallbackTimeout = setTimeout(() => {
+        if (!initialLoadDoneRef.current[user.id]) {
+          initialLoadDoneRef.current[user.id] = true;
+          loadTasks(1, {});
+        }
+      }, 15000);
+      
+      return () => clearTimeout(fallbackTimeout);
     }
-  }, [filters, activeTab]); // Added activeTab dependency
+  }, [user?.id, connectionState]);
 
-  // Socket.IO real-time updates - enhanced with better error handling
+  // Tab change handler - only reload if switching to/from shared tab
+  const handleTabChange = (tabIndex: number) => {
+    const newTabValue = tabConfig[tabIndex].value;
+    const currentTabValue = tabConfig[activeTab].value;
+    
+    setActiveTab(tabIndex);
+    setCurrentPage(1);
+    
+    // Only reload if switching between owned/shared tabs (different data sources)
+    if ((currentTabValue === 'shared') !== (newTabValue === 'shared')) {
+      if (user?.id && (connectionState === 'connected' || connectionState === 'failed') && initialLoadDoneRef.current[user.id]) {
+        loadTasks(1, {});
+      }
+    }
+  };
+
+  // Use optimized tab change to reduce INP
+  const optimizedHandleTabChange = useOptimizedTabChange(handleTabChange);
+
+  // Socket.IO real-time updates - optimized dependencies to prevent frequent re-setup
   useEffect(() => {
     if (!socket || !isConnected || !user?.id) {
-      console.log('🔌 Socket not ready for real-time updates:', { 
-        hasSocket: !!socket, 
-        isConnected, 
-        hasUser: !!user 
-      });
       return;
     }
 
-    console.log('🔌 Setting up socket event listeners for user:', user.email);
-
     // Test socket connection
     socket.emit('test_event', { message: 'Testing socket connection from DashboardPage' });
-    socket.on('test_response', (data) => {
-      console.log('✅ Socket test response received:', data);
+    socket.on('test_response', () => {
+      // Socket test response received
     });
 
     const handleTaskCreated = (task: Task) => {
-      console.log('🆕 DashboardPage: Task created via Socket.IO:', task.title, task._id);
-
       setTasks(prev => {
-        // Check if task already exists to prevent duplicates
         const exists = prev.find(t => t._id === task._id);
         if (exists) {
-          console.log('⚠️ DashboardPage: Task already exists, skipping duplicate');
           return prev;
         }
-        console.log('✅ DashboardPage: Adding new task to owned tasks state');
-        const newTasks = [task, ...prev];
-        // Re-filter after adding a new task
-        // The useEffect below handles the filtering based on the updated state.
-        // No need to manually call setFilteredTasks here.
-        return newTasks;
+        return [task, ...prev];
       });
     };
 
-    // Use the moved handleTaskUpdated function
-    // const handleTaskUpdated = (updatedTask: Task) => { ... }; // Removed from here
+    const handleTaskUpdatedSocket = (updatedTask: Task) => {
+      // Update owned tasks if the task exists there
+      setTasks(prev => {
+        const taskIndex = prev.findIndex(task => task._id === updatedTask._id);
+        if (taskIndex !== -1) {
+          return prev.map(task => task._id === updatedTask._id ? updatedTask : task);
+        }
+        return prev;
+      });
+
+      // Update shared tasks if the task exists there
+      setSharedTasks(prev => {
+        const taskIndex = prev.findIndex(task => task._id === updatedTask._id);
+        if (taskIndex !== -1) {
+          return prev.map(task => task._id === updatedTask._id ? updatedTask : task);
+        }
+        return prev;
+      });
+    };
 
     const handleTaskDeleted = ({ taskId }: { taskId: string }) => {
-      console.log('🗑️ DashboardPage: Task deleted via Socket.IO:', taskId);
-
-      setTasks(prev => {
-        const filteredOwned = prev.filter(task => task._id !== taskId);
-        console.log('✅ DashboardPage: Removed task from owned tasks state');
-         // The useEffect below handles the filtering based on the updated state.
-        // No need to manually call setFilteredTasks here.
-        return filteredOwned;
-      });
-      setSharedTasks(prev => {
-        const filteredShared = prev.filter(task => task._id !== taskId);
-        console.log('✅ DashboardPage: Removed task from shared tasks state');
-         // The useEffect below handles the filtering based on the updated state.
-        // No need to manually call setFilteredTasks here.
-        return filteredShared;
-      });
+      setTasks(prev => prev.filter(task => task._id !== taskId));
+      setSharedTasks(prev => prev.filter(task => task._id !== taskId));
     };
 
     const handleTaskShared = (sharedTask: Task) => {
-      console.log('📤 DashboardPage: Task shared via Socket.IO:', sharedTask.title, sharedTask._id, 'Owner:', sharedTask.owner); // Added owner log
-
-      setSharedTasks(prev => {
-        const exists = prev.find(task => task._id === sharedTask._id);
-        let newSharedTasks;
-        if (exists) {
-          console.log('✅ DashboardPage: Updating existing shared task in sharedTasks state');
-          newSharedTasks = prev.map(task =>
-            task._id === sharedTask._id ? sharedTask : task
-          );
-        } else {
-          console.log('✅ DashboardPage: Adding new shared task to sharedTasks state');
-          newSharedTasks = [sharedTask, ...prev];
+      // Update the owned task to reflect sharing changes (for owner)
+      setTasks(prev => {
+        const taskIndex = prev.findIndex(task => task._id === sharedTask._id);
+        if (taskIndex !== -1) {
+          return prev.map(task => task._id === sharedTask._id ? sharedTask : task);
         }
-
-        // After updating sharedTasks, the useEffect that watches state dependencies will re-filter.
-        // No need to manually call setFilteredTasks here.
-
-        return newSharedTasks; // Return the updated sharedTasks array
+        return prev;
       });
 
-      // No need to update the 'tasks' state here for a recipient receiving a shared task event.
-      // The owner receives a 'task_updated' event.
+      // Add to shared tasks if it's shared with the current user
+      if (sharedTask.sharedWith?.some(sharedUser => sharedUser.id === user?.id)) {
+        setSharedTasks(prev => {
+          const exists = prev.find(task => task._id === sharedTask._id);
+          if (exists) {
+            return prev.map(task => task._id === sharedTask._id ? sharedTask : task);
+          } else {
+            return [sharedTask, ...prev];
+          }
+        });
+      }
     };
 
-    // New handler for task_unshared event
-    const handleTaskUnshared = ({ taskId }: { taskId: string }) => {
-      console.log('🔌 DashboardPage: Task unshared via Socket.IO:', taskId);
-      if (isShareModalOpen) {
-        console.log('⏳ Share modal is open, delaying task list update for task:', taskId);
+    const handleTaskUnshared = ({ taskId, updatedTask }: { taskId: string; updatedTask?: Task }) => {
+      // Update owned task to reflect removal of shared users (for owner)
+      if (updatedTask) {
+        setTasks(prev => {
+          const taskIndex = prev.findIndex(task => task._id === taskId);
+          if (taskIndex !== -1) {
+            return prev.map(task => task._id === taskId ? updatedTask : task);
+          }
+          return prev;
+        });
+      }
+
+      // Remove from shared tasks if the current user is no longer shared
+      const isStillSharedWithCurrentUser = updatedTask?.sharedWith?.some(sharedUser => sharedUser.id === user?.id);
+      
+      if (!isStillSharedWithCurrentUser) {
+        setSharedTasks(prev => prev.filter(task => task._id !== taskId));
+      }
+
+      // Handle pending updates for share modal
+      const shareModalOpen = document.querySelector('[data-testid="share-modal"]') !== null;
+      
+      if (shareModalOpen) {
         setUnsharedTaskIdsPendingUpdate(prev => [...prev, taskId]);
-      } else {
-        console.log('✅ Share modal is closed, immediately reloading tasks.');
-        // Reload tasks to reflect the unshared task removal
-        loadTasks(currentPage, filters); // Reload current page with current filters
       }
     };
 
     // Subscribe to events
     socket.on('task_created', handleTaskCreated);
-    socket.on('task_updated', handleTaskUpdated); // Use the moved function
+    socket.on('task_updated', handleTaskUpdatedSocket);
     socket.on('task_deleted', handleTaskDeleted);
     socket.on('task_shared', handleTaskShared);
-    socket.on('task_unshared', handleTaskUnshared); // Subscribe to the new event
+    socket.on('task_unshared', handleTaskUnshared);
 
     // Cleanup
     return () => {
-      console.log('🔌 Cleaning up socket event listeners');
       socket.off('test_response');
       socket.off('task_created', handleTaskCreated);
-      socket.off('task_updated', handleTaskUpdated); // Clean up the moved function listener
+      socket.off('task_updated', handleTaskUpdatedSocket);
       socket.off('task_deleted', handleTaskDeleted);
       socket.off('task_shared', handleTaskShared);
-      socket.off('task_unshared', handleTaskUnshared); // Clean up the new listener
+      socket.off('task_unshared', handleTaskUnshared);
     };
-  }, [socket, isConnected, user?.id, handleTaskUpdated, activeTab, filters, filterTasksByTab, tasks, sharedTasks, isShareModalOpen]); // Add isShareModalOpen dependency
+  }, [socket, isConnected, user?.id]);
+
+  // Handle pending unshared task updates when share modal closes
+  useEffect(() => {
+    if (!isShareModalOpen && unsharedTaskIdsPendingUpdate.length > 0) {
+      loadTasks(currentPage, {});
+      setUnsharedTaskIdsPendingUpdate([]);
+    }
+  }, [isShareModalOpen, unsharedTaskIdsPendingUpdate.length]);
 
   // CRUD Operations
   const handleCreateTask = async (taskData: CreateTaskData) => {
     try {
-      console.log('➕ DashboardPage: Creating task:', taskData);
-      setLoading(true); // Set loading state during creation
+      setLoading(true);
       
-      const createdTask = await taskService.createTask(taskData);
-      console.log('✅ DashboardPage: Task created successfully:', createdTask);
+      await taskService.createTask(taskData);
       
-      // Close modal first
       onTaskModalClose();
       
-      // Show success toast
       toast({
         title: 'Success',
         description: 'Task created successfully',
@@ -493,13 +481,7 @@ const DashboardPage: React.FC = () => {
         isClosable: true,
       });
       
-      // The socket event will handle adding the task to the state
-      // No need to manually update state here
-      
     } catch (error: any) {
-      console.error('❌ DashboardPage: Error creating task:', error);
-      
-      // Handle specific error messages from backend
       let errorMessage = 'Failed to create task';
       if (error.response?.data?.message) {
         errorMessage = error.response.data.message;
@@ -517,22 +499,18 @@ const DashboardPage: React.FC = () => {
         isClosable: true,
       });
     } finally {
-      setLoading(false); // Clear loading state
+      setLoading(false);
     }
   };
 
   const handleUpdateTask = async (taskId: string, taskData: UpdateTaskData) => {
     try {
-      console.log('✏️ DashboardPage: Updating task:', taskId, taskData);
-      setLoading(true); // Set loading state during update
+      setLoading(true);
       
-      const updatedTask = await taskService.updateTask(taskId, taskData);
-      console.log('✅ DashboardPage: Task updated successfully:', updatedTask);
+      await taskService.updateTask(taskId, taskData);
       
-      // Close modal first
       onTaskModalClose();
       
-      // Show success toast
       toast({
         title: 'Success',
         description: 'Task updated successfully',
@@ -541,11 +519,7 @@ const DashboardPage: React.FC = () => {
         isClosable: true,
       });
       
-      // The socket event will handle updating the task in the state
-      // No need to manually update state here
-      
     } catch (error) {
-      console.error('❌ DashboardPage: Error updating task:', error);
       toast({
         title: 'Error',
         description: 'Failed to update task',
@@ -554,19 +528,16 @@ const DashboardPage: React.FC = () => {
         isClosable: true,
       });
     } finally {
-      setLoading(false); // Clear loading state
+      setLoading(false);
     }
   };
 
   const handleDeleteTask = async (taskId: string) => {
     try {
-      console.log('🗑️ Deleting task:', taskId);
-      setLoading(true); // Set loading state during deletion
+      setLoading(true);
       
       await taskService.deleteTask(taskId);
-      console.log('✅ DashboardPage: Task deleted successfully');
       
-      // Show success toast
       toast({
         title: 'Success',
         description: 'Task deleted successfully',
@@ -575,34 +546,27 @@ const DashboardPage: React.FC = () => {
         isClosable: true,
       });
       
-      // The socket event will handle removing the task from the state
-      // No need to manually update state here
-      
-    } catch (error: any) { // Added any type to error
-      console.error('❌ Error deleting task:', error);
+    } catch (error: any) {
       toast({
         title: 'Error',
-        description: error.response?.data?.message || 'Failed to delete task', // Fixed: Access error.response safely
+        description: error.response?.data?.message || 'Failed to delete task',
         status: 'error',
         duration: 3000,
         isClosable: true,
       });
     } finally {
-      setLoading(false); // Clear loading state
+      setLoading(false);
     }
   };
 
   const handleShareTask = async (taskId: string, email: string) => {
     try {
-      console.log('📤 Sharing task:', taskId, 'with', email);
-      setLoading(true); // Set loading state during sharing
+      setLoading(true);
       
-      const sharedTask = await taskService.shareTask(taskId, email);
-      console.log('✅ DashboardPage: Task shared successfully:', sharedTask);
+      await taskService.shareTask(taskId, email);
       
       onShareModalClose();
       
-      // Show success toast
       toast({
         title: 'Success',
         description: `Task shared with ${email}`,
@@ -611,32 +575,25 @@ const DashboardPage: React.FC = () => {
         isClosable: true,
       });
       
-      // The socket event will handle updating the task in the state
-      // No need to manually reload tasks here
-      
-    } catch (error: any) { // Added any type to error
-      console.error('❌ Error sharing task:', error);
+    } catch (error: any) {
       toast({
         title: 'Error',
-        description: error.response?.data?.message || 'Failed to share task', // Fixed: Access error.response safely
+        description: error.response?.data?.message || 'Failed to share task',
         status: 'error',
         duration: 3000,
         isClosable: true,
       });
     } finally {
-      setLoading(false); // Clear loading state
+      setLoading(false);
     }
   };
 
   const handleStatusChange = async (taskId: string, status: Task['status']) => {
     try {
-      console.log('🔄 DashboardPage: Changing task status:', taskId, status);
-      setLoading(true); // Set loading state during status change
+      setLoading(true);
       
-      const updatedTask = await taskService.updateTask(taskId, { status });
-      console.log('✅ DashboardPage: Task status updated successfully:', updatedTask);
+      await taskService.updateTask(taskId, { status });
       
-      // Show success toast
       toast({
         title: 'Status Updated',
         description: `Task status changed to ${status}`,
@@ -645,11 +602,7 @@ const DashboardPage: React.FC = () => {
         isClosable: true,
       });
       
-      // The socket event will handle updating the task in the state
-      // No need to manually update state here
-      
     } catch (error: any) {
-      console.error('❌ DashboardPage: Error updating task status:', error);
       toast({
         title: 'Error',
         description: error.response?.data?.message || 'Failed to update task status',
@@ -658,7 +611,7 @@ const DashboardPage: React.FC = () => {
         isClosable: true,
       });
     } finally {
-      setLoading(false); // Clear loading state
+      setLoading(false);
     }
   };
 
@@ -680,17 +633,12 @@ const DashboardPage: React.FC = () => {
 
   // Override the default onClose for ShareModal
   const handleShareModalClose = () => {
-    console.log('🚪 Share modal closing.');
-    onShareModalClose(); // This sets isShareModalOpen to false
+    onShareModalClose();
 
     // Check if there are pending unshared tasks to update
     if (unsharedTaskIdsPendingUpdate.length > 0) {
-      console.log('🔄 Share modal closed with pending unshared tasks, reloading task list.');
-      // Reload tasks to reflect the unshared tasks that were removed while the modal was open
-      loadTasks(currentPage, filters); // Reload current page with current filters
-      setUnsharedTaskIdsPendingUpdate([]); // Clear the pending list
-    } else {
-      console.log('✅ Share modal closed with no pending unshared tasks.');
+      loadTasks(currentPage, filters);
+      setUnsharedTaskIdsPendingUpdate([]);
     }
   };
 
@@ -698,23 +646,34 @@ const DashboardPage: React.FC = () => {
   const handleTaskModalSubmit = async (taskData: CreateTaskData | UpdateTaskData, taskId?: string) => {
     try {
       if (taskId) {
-        // Update existing task
         await handleUpdateTask(taskId, taskData as UpdateTaskData);
       } else {
-        // Create new task
         await handleCreateTask(taskData as CreateTaskData);
       }
     } catch (error) {
-      console.error('❌ DashboardPage: Error in TaskModal submit:', error);
-      // Error is already handled in the individual handlers
-      throw error; // Re-throw to let TaskModal know there was an error
+      throw error;
     }
   };
 
-  // New function to handle task updates from TaskCard
+  // Function to handle task updates from TaskCard
   const handleTaskCardUpdate = (updatedTask: Task) => {
-    console.log('🔄 DashboardPage: Task updated from TaskCard:', updatedTask.title, updatedTask._id);
-    handleTaskUpdated(updatedTask); // Use the now accessible function
+    // Update owned tasks if the task exists there
+    setTasks(prev => {
+      const taskIndex = prev.findIndex(task => task._id === updatedTask._id);
+      if (taskIndex !== -1) {
+        return prev.map(task => task._id === updatedTask._id ? updatedTask : task);
+      }
+      return prev;
+    });
+
+    // Update shared tasks if the task exists there
+    setSharedTasks(prev => {
+      const taskIndex = prev.findIndex(task => task._id === updatedTask._id);
+      if (taskIndex !== -1) {
+        return prev.map(task => task._id === updatedTask._id ? updatedTask : task);
+      }
+      return prev;
+    });
   };
 
   // Loading state
@@ -779,6 +738,9 @@ const DashboardPage: React.FC = () => {
             </Button>
           </Flex>
 
+          {/* Connection Status */}
+          <ConnectionStatus />
+
           {/* Search and Filter Bar */}
           <TaskFilters
             filters={filters}
@@ -789,7 +751,7 @@ const DashboardPage: React.FC = () => {
           {/* Tabs - Task Categories */}
           <Tabs
             index={activeTab}
-            onChange={setActiveTab}
+            onChange={optimizedHandleTabChange}
             variant="enclosed"
             colorScheme="brand"
           >
@@ -802,11 +764,9 @@ const DashboardPage: React.FC = () => {
               boxShadow="sm"
             >
               {tabConfig.map((tab) => {
-                filterTasksByTab(
-                  tab.value === 'shared' ? sharedTasks : tasks, 
-                  tab.value, 
-                  filters
-                ).length;
+                const tabTasks = tab.value === 'shared' ? sharedTasks : tasks;
+                const taskCount = filterTasksByTab(tabTasks, tab.value, filters).length;
+                
                 return (
                   <Tab
                     key={tab.value}
@@ -834,6 +794,18 @@ const DashboardPage: React.FC = () => {
                   >
                     <HStack spacing={2} position="relative" zIndex={1}>
                       <Text fontWeight="medium">{tab.label}</Text>
+                      <Badge
+                        colorScheme={activeTab === tabConfig.findIndex(t => t.value === tab.value) ? tab.colorScheme : 'gray'}
+                        borderRadius="full"
+                        px={2}
+                        py={0.5}
+                        fontSize="xs"
+                        fontWeight="bold"
+                        transition="all 0.2s"
+                        variant={activeTab === tabConfig.findIndex(t => t.value === tab.value) ? 'solid' : 'subtle'}
+                      >
+                        {taskCount}
+                      </Badge>
                     </HStack>
                   </Tab>
                 );
@@ -853,7 +825,7 @@ const DashboardPage: React.FC = () => {
                     {/* Use the new TaskList component */}
                     <TaskList
                       tasks={filteredTasks}
-                      loading={loading}
+                      loading={loading || (!!user && connectionState === 'connecting')}
                       error={loadError}
                       onEdit={openEditModal}
                       onDelete={handleDeleteTask}

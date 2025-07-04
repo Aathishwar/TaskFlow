@@ -1,4 +1,5 @@
 import api from '../utils/api';
+import { withRetry } from '../utils/retryWithWarmup';
 import { Task, CreateTaskData, UpdateTaskData, TaskFilters, TaskResponse } from '../types';
 
 interface GetTasksParams extends TaskFilters {
@@ -9,8 +10,10 @@ interface GetTasksParams extends TaskFilters {
 export const taskService = {
   // Get all tasks with filters and pagination
   getTasks: async (params: GetTasksParams = {}): Promise<TaskResponse> => {
-    const response = await api.get('/tasks', { params });
-    return response.data;
+    return withRetry(async () => {
+      const response = await api.get('/tasks', { params });
+      return response.data;
+    }, { maxAttempts: 3 });
   },
 
   // Create a new task
@@ -44,7 +47,9 @@ export const taskService = {
 
   // Get tasks shared with the user
   getSharedTasks: async (params: GetTasksParams = {}): Promise<TaskResponse> => {
-    const response = await api.get('/tasks/shared', { params });
-    return response.data;
+    return withRetry(async () => {
+      const response = await api.get('/tasks/shared', { params });
+      return response.data;
+    }, { maxAttempts: 3 });
   },
 };
