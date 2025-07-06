@@ -12,7 +12,7 @@ A production-ready, multi-user task management application with real-time collab
 ✅ **Notifications**: Smart reminders for tasks due soon  
 ✅ **Profile Management**: Full user profile control with picture upload  
 ✅ **Production Ready**: Fully configured for deployment  
-✅ **Fixed Realtime Issues**: Resolved socket connection and time validation problems 
+✅ **Faster Response**: Faster filter and search results using memo.
 
 ## 🚀 Production Deployment
 
@@ -102,9 +102,11 @@ The application follows a modern microservices architecture:
 - **Rate Limiting** - API protection
 
 ### Deployment & Infrastructure
+- **Vercel** - Frontend hosting
 - **Netlify** - Frontend hosting
 - **Render** - Backend hosting
 - **MongoDB Atlas** - Database hosting
+- **Firebase** - Authentication
 
 ## 🚀 Features
 
@@ -133,7 +135,7 @@ The application follows a modern microservices architecture:
 
 ### Profile Management
 👤 View & edit display name, bio, phone, location  
-🖼 Upload profile picture (Cloudinary or base64 fallback)  
+🖼 Upload profile picture (Cloudinary)  
 🗑 Secure account deletion with full data cleanup  
 📦 Settings saved and validated with error handling  
 ✅ Responsive Chakra UI layout  
